@@ -1,0 +1,1827 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulado Interativo - Análise de Sistemas</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Calm Study Palette -->
+    <!-- Application Structure Plan: A aplicação foi projetada como uma SPA (Single-Page Application) com múltiplas telas gerenciadas por JavaScript: Início, Quiz, Resultados, Histórico do Aluno, Revisão de Questões e Área do Professor. O fluxo do aluno é linear (início -> quiz -> resultado), com a opção de consultar seu histórico. O professor tem um acesso separado para ver todos os resultados. A chave para os dados do aluno é o e-mail, garantindo integridade. -->
+    <!-- Visualization & Content Choices: As questões e alternativas são apresentadas como texto estruturado em HTML para clareza. A interação principal é feita através de botões clicáveis para as respostas. A principal visualização de dados é um gráfico de rosca (Doughnut Chart) da biblioteca Chart.js, exibido na tela de resultados. O objetivo é informar o desempenho do usuário de forma sucinta. O histórico é apresentado em tabelas HTML para fácil leitura e ordenação. Esta abordagem utiliza métodos baseados em Canvas para gráficos e HTML para dados textuais. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8f7f4;
+            color: #4a4a4a;
+        }
+        .quiz-card {
+            background-color: #ffffff;
+            border: 1px solid #e0e0e0;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            transition: all 0.3s ease;
+        }
+        .option-btn {
+            border: 2px solid #d1d5db;
+            transition: all 0.2s ease-in-out;
+        }
+        .option-btn:hover:not(:disabled) {
+            border-color: #4f46e5;
+            background-color: #eef2ff;
+        }
+        .correct {
+            background-color: #dcfce7 !important;
+            border-color: #22c55e !important;
+            color: #15803d;
+        }
+        .incorrect {
+            background-color: #fee2e2 !important;
+            border-color: #ef4444 !important;
+            color: #b91c1c;
+        }
+        .rationale {
+            background-color: #f3f4f6;
+            border-left: 4px solid #6b7280;
+        }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 320px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 320px;
+            max-height: 400px;
+        }
+        .btn-disabled {
+            background-color: #a5b4fc;
+            cursor: not-allowed;
+            opacity: 0.7;
+        }
+        .answer-sheet-btn {
+            border: 1px solid #d1d5db;
+            color: #4b5563;
+        }
+        .answer-sheet-btn.answered {
+            background-color: #4f46e5;
+            color: white;
+            border-color: #4f46e5;
+        }
+        .answer-sheet-btn.current {
+            border-width: 2px;
+            border-color: #312e81;
+            box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.4);
+        }
+        .modal-backdrop {
+            background-color: rgba(0, 0, 0, 0.5);
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen p-4">
+
+    <div id="app" class="w-full max-w-6xl mx-auto">
+
+        <!-- Start Screen -->
+        <div id="start-screen" class="quiz-card rounded-xl p-8 md:p-12 text-center">
+            <h1 class="text-3xl md:text-4xl font-bold text-gray-800 mb-2">Simulado de Análise de Sistemas</h1>
+            <p id="current-quiz-info" class="text-sm text-gray-500 mb-4">Carregando simulado...</p>
+            <p class="text-gray-600 mb-6 max-w-2xl mx-auto">
+                Digite seu nome e e-mail para começar ou para consultar seu histórico.
+            </p>
+            <div class="max-w-md mx-auto mb-4 space-y-4">
+                <input type="text" id="student-name" placeholder="Digite seu nome completo" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <input type="email" id="student-email" placeholder="Digite seu e-mail" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            </div>
+             <div class="flex flex-col md:flex-row gap-4 justify-center mt-6">
+                <button id="start-btn" class="bg-indigo-600 text-white font-bold py-3 px-8 rounded-lg hover:bg-indigo-700 transition-colors shadow-lg btn-disabled" disabled>
+                    Iniciar Simulado
+                </button>
+                <button id="student-history-btn" class="bg-gray-200 text-gray-700 font-bold py-3 px-8 rounded-lg hover:bg-gray-300 transition-colors btn-disabled" disabled>
+                    Meu Histórico
+                </button>
+            </div>
+             <div class="mt-8">
+                <button id="admin-area-btn" class="text-sm text-indigo-600 hover:underline">Área do Professor</button>
+            </div>
+        </div>
+
+        <!-- Quiz Screen -->
+        <div id="quiz-screen" class="hidden grid grid-cols-1 md:grid-cols-4 gap-8">
+            <div class="md:col-span-1 quiz-card rounded-xl p-4">
+                <h3 id="answer-sheet-title" class="font-bold text-center mb-4">Answer Sheet</h3>
+                <div id="answer-sheet" class="grid grid-cols-5 gap-2"></div>
+                <div class="mt-4 text-xs space-y-2">
+                    <div class="flex items-center gap-2"><div class="w-4 h-4 bg-white border border-gray-400 rounded"></div><span>Não Respondida</span></div>
+                    <div class="flex items-center gap-2"><div class="w-4 h-4 bg-indigo-600 rounded"></div><span>Respondida</span></div>
+                </div>
+            </div>
+            <div class="md:col-span-3 quiz-card rounded-xl p-8">
+                <h2 class="text-xl font-bold text-gray-800 mb-6">Questão <span id="question-number"></span> de <span id="total-questions"></span></h2>
+                <div class="">
+                    <p id="question-text" class="text-lg font-semibold text-gray-700 mb-6"></p>
+                    <div id="code-snippet-container" class="mb-6 hidden">
+                        <pre class="bg-gray-800 text-white p-4 rounded-md overflow-x-auto"><code id="code-snippet"></code></pre>
+                    </div>
+                    <div id="answer-options" class="space-y-4"></div>
+                    <div class="mt-8 flex justify-between items-center">
+                        <button id="prev-btn" class="bg-gray-200 text-gray-700 font-bold py-2 px-6 rounded-lg hover:bg-gray-300 transition-colors">&larr; Anterior</button>
+                        <button id="finish-btn" class="bg-green-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-green-700 transition-colors shadow-md btn-disabled" disabled>Finalizar Simulado</button>
+                        <button id="next-btn" class="bg-indigo-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-indigo-700 transition-colors shadow-md">Próxima &rarr;</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Results Screen -->
+        <div id="results-screen" class="hidden quiz-card rounded-xl p-8 md:p-12 text-center">
+             <h1 class="text-3xl md:text-4xl font-bold text-gray-800 mb-4">Resultado do Simulado</h1>
+            <p class="text-gray-600 mb-6">
+                Parabéns por concluir o simulado! Seu resultado foi salvo.
+            </p>
+            <p class="text-2xl font-semibold text-gray-700 mb-2">Você acertou <span id="score"></span> de <span id="total-score-questions"></span> questões.</p>
+            <p id="score-percentage" class="text-4xl font-bold text-indigo-600 mb-8"></p>
+            <div class="chart-container">
+                <canvas id="results-chart"></canvas>
+            </div>
+            <button id="restart-btn" class="mt-8 bg-indigo-600 text-white font-bold py-3 px-8 rounded-lg hover:bg-indigo-700 transition-colors shadow-lg">
+                Voltar ao Início
+            </button>
+        </div>
+
+        <!-- Admin Dashboard Screen -->
+        <div id="admin-dashboard-screen" class="hidden quiz-card rounded-xl p-8 md:p-12">
+            <div class="flex justify-between items-center mb-6 border-b pb-4">
+                <h1 class="text-3xl font-bold text-gray-800">Painel do Professor</h1>
+                <button id="back-to-start-btn-dashboard" class="bg-gray-200 text-gray-700 font-bold py-2 px-6 rounded-lg hover:bg-gray-300 transition-colors">&larr; Sair</button>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <button id="show-history-view-btn" class="p-6 bg-indigo-50 hover:bg-indigo-100 rounded-lg text-left">
+                    <h2 class="text-xl font-bold text-indigo-800">Ver Histórico</h2>
+                    <p class="text-indigo-600">Acompanhe o desempenho de todos os alunos.</p>
+                </button>
+                <button id="show-create-quiz-view-btn" class="p-6 bg-green-50 hover:bg-green-100 rounded-lg text-left">
+                    <h2 class="text-xl font-bold text-green-800">Criar Novo Simulado</h2>
+                    <p class="text-green-600">Monte um novo simulado com questões aleatórias.</p>
+                </button>
+            </div>
+        </div>
+        
+        <!-- Admin History Screen -->
+        <div id="admin-history-screen" class="hidden quiz-card rounded-xl p-8 md:p-12">
+            <div class="flex flex-col md:flex-row justify-between md:items-center mb-6 gap-4">
+                <h1 class="text-3xl font-bold text-gray-800">Histórico Geral</h1>
+                <div class="flex items-center gap-4">
+                    <select id="quiz-filter" class="border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        <option value="all">Todos os Simulados</option>
+                    </select>
+                    <button id="back-to-dashboard-btn-admin" class="bg-gray-200 text-gray-700 font-bold py-2 px-6 rounded-lg hover:bg-gray-300 transition-colors">
+                        &larr; Painel
+                    </button>
+                </div>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="min-w-full bg-white">
+                    <thead class="bg-gray-100">
+                        <tr>
+                            <th class="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nome do Aluno</th>
+                             <th class="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">E-mail</th>
+                             <th class="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Simulado</th>
+                            <th class="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Acertos</th>
+                            <th class="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Percentual</th>
+                            <th class="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Data</th>
+                        </tr>
+                    </thead>
+                    <tbody id="admin-history-table-body" class="divide-y divide-gray-200">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <!-- Admin Create Quiz Screen -->
+        <div id="create-quiz-screen" class="hidden quiz-card rounded-xl p-8 md:p-12">
+             <div class="flex justify-between items-center mb-6">
+                <h1 class="text-3xl font-bold text-gray-800">Criar Novo Simulado</h1>
+                <button id="back-to-dashboard-btn-create" class="bg-gray-200 text-gray-700 font-bold py-2 px-6 rounded-lg hover:bg-gray-300 transition-colors">
+                    &larr; Voltar ao Painel
+                </button>
+            </div>
+            <div class="max-w-md space-y-4">
+                 <p class="text-gray-600">Defina um nome e a quantidade de questões para o novo simulado. As questões serão selecionadas aleatoriamente do banco principal.</p>
+                <div>
+                    <label for="quiz-name" class="block text-sm font-medium text-gray-700">Nome do Simulado</label>
+                    <input type="text" id="quiz-name" placeholder="Ex: Prova Semestral 1" class="mt-1 w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                </div>
+                <div>
+                    <label for="quiz-question-count" class="block text-sm font-medium text-gray-700">Quantidade de Questões (1-80)</label>
+                    <input type="number" id="quiz-question-count" min="1" max="80" placeholder="Ex: 20" class="mt-1 w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                </div>
+                <button id="save-quiz-btn" class="w-full bg-green-600 text-white font-bold py-3 px-8 rounded-lg hover:bg-green-700 transition-colors shadow-lg">
+                    Salvar e Ativar Simulado
+                </button>
+                <p id="create-quiz-status" class="text-sm text-center mt-2"></p>
+            </div>
+        </div>
+
+
+        <!-- Student History Screen -->
+        <div id="student-history-screen" class="hidden quiz-card rounded-xl p-8 md:p-12">
+            <div class="flex justify-between items-center mb-6">
+                <h1 class="text-3xl font-bold text-gray-800">Meu Histórico</h1>
+                <button id="back-to-start-btn-student" class="bg-gray-200 text-gray-700 font-bold py-2 px-6 rounded-lg hover:bg-gray-300 transition-colors">
+                    &larr; Voltar
+                </button>
+            </div>
+            <div id="student-history-list" class="space-y-4"></div>
+        </div>
+
+        <!-- Review Screen -->
+        <div id="review-screen" class="hidden quiz-card rounded-xl p-8 md:p-12">
+            <div class="flex justify-between items-center mb-6">
+                <h1 class="text-3xl font-bold text-gray-800">Revisão de Questões</h1>
+                <button id="back-to-student-history-btn" class="bg-gray-200 text-gray-700 font-bold py-2 px-6 rounded-lg hover:bg-gray-300 transition-colors">
+                    &larr; Voltar
+                </button>
+            </div>
+            <div id="review-questions-container" class="space-y-6"></div>
+        </div>
+    </div>
+    
+    <!-- Admin Password Modal -->
+    <div id="password-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center modal-backdrop">
+        <div class="bg-white rounded-lg shadow-xl p-8 max-w-sm w-full">
+            <h2 class="text-2xl font-bold mb-4">Acesso Restrito</h2>
+            <p class="text-gray-600 mb-4">Por favor, insira a senha de professor para continuar.</p>
+            <input type="password" id="admin-password" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Senha">
+            <p id="password-error" class="text-red-500 text-sm mt-2 hidden">Senha incorreta.</p>
+            <div class="mt-6 flex justify-end gap-4">
+                <button id="cancel-password-btn" class="bg-gray-200 text-gray-700 font-bold py-2 px-6 rounded-lg hover:bg-gray-300">Cancelar</button>
+                <button id="submit-password-btn" class="bg-indigo-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-indigo-700">Entrar</button>
+            </div>
+        </div>
+    </div>
+
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+        import { getFirestore, collection, addDoc, getDocs, query, where, getDoc, doc, orderBy, limit, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+        
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+            apiKey: "AIzaSyAwI-bcZe-k9dv38LtQRfee25iSOWOCPqs",
+            authDomain: "agita-esportivo.firebaseapp.com",
+            projectId: "agita-esportivo",
+            storageBucket: "agita-esportivo.appspot.com",
+            messagingSenderId: "493917143963",
+            appId: "1:493917143963:web:9e444bb6a5f7b16e1a573e"
+        };
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'agita-esportivo';
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+
+        let userId = null;
+        let dbResultsCollection;
+        let dbSimuladosCollection;
+        let dbConfigCollection;
+        
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                userId = user.uid;
+                dbResultsCollection = collection(db, `artifacts/${appId}/public/data/resultados`);
+                dbSimuladosCollection = collection(db, `artifacts/${appId}/public/data/simulados`);
+                dbConfigCollection = collection(db, `artifacts/${appId}/public/data/config`);
+                loadLatestQuiz();
+            } else {
+                signInAnonymously(auth).catch(error => console.error("Anonymous sign-in failed:", error));
+            }
+        });
+
+        const fullQuizData = [
+    {
+        questionNumber: 1,
+        question: "Uma equipe Scrum desenvolve um sistema em ciclos curtos (sprints). Qual abordagem de testes é mais adequada nesse cenário?",
+        answerOptions: [
+            { text: "Testar somente após o término do projeto", isCorrect: false },
+            { text: "Realizar testes manuais e completos apenas no final da sprint", isCorrect: false },
+            { text: "Automatizar testes unitários e de regressão desde o início e testar continuamente", isCorrect: true },
+            { text: "Aguardar o cliente testar todo o sistema", isCorrect: false }
+        ],
+        rationale: "Em metodologias ágeis, é ideal adotar testes automatizados e contínuos, promovendo feedback rápido e garantindo qualidade desde o início."
+    },
+    {
+        questionNumber: 2,
+        question: "Durante os testes de sistema, os analistas registram screenshots, logs e resultados esperados/conseguidos. Essa prática faz parte de:",
+        answerOptions: [
+            { text: "Testes de segurança", isCorrect: false },
+            { text: "Automação de processos", isCorrect: false },
+            { text: "Documentação e rastreabilidade de testes", isCorrect: true },
+            { text: "Controle de versão de código", isCorrect: false }
+        ],
+        rationale: "A documentação de evidências permite rastreabilidade e validação posterior, sendo parte essencial de projetos auditáveis."
+    },
+    {
+        questionNumber: 3,
+        question: "Em um sistema web modular, a equipe criou casos de teste para validar a comunicação entre os módulos de login, perfil e relatórios. Esses testes verificam se os módulos trocam dados corretamente. Qual nível de teste está sendo aplicado?",
+        answerOptions: [
+            { text: "Teste de unidade", isCorrect: false },
+            { text: "Teste de integração", isCorrect: true },
+            { text: "Teste de sistema", isCorrect: false },
+            { text: "Teste de validação", isCorrect: false }
+        ],
+        rationale: "O teste de integração verifica se módulos funcionam corretamente em conjunto, respeitando as interfaces entre eles."
+    },
+    {
+        questionNumber: 4,
+        question: "Durante o planejamento, a equipe de testes definiu que seriam testados: entradas inválidas, fluxo alternativo de cancelamento, e mensagens de erro. Esse planejamento visa:",
+        answerOptions: [
+            { text: "Verificar se o código segue padrões de indentação", isCorrect: false },
+            { text: "Cobrir exceções e possíveis falhas de uso do sistema", isCorrect: true },
+            { text: "Testar apenas a segurança da aplicação", isCorrect: false },
+            { text: "Confirmar o nome correto das tabelas do banco", isCorrect: false }
+        ],
+        rationale: "Testar exceções e fluxos alternativos é fundamental para garantir a robustez do sistema diante de erros ou situações inesperadas."
+    },
+    {
+        questionNumber: 5,
+        question: "Ao testar um campo de idade que aceita valores de 18 a 60 anos, o analista seleciona apenas três valores: 17, 30 e 61. Essa técnica reduz o número de testes mantendo a cobertura. Trata-se de:",
+        answerOptions: [
+            { text: "Técnica de fluxo de controle", isCorrect: false },
+            { text: "Técnica de particionamento de equivalência", isCorrect: true },
+            { text: "Teste exploratório", isCorrect: false },
+            { text: "Teste funcional completo", isCorrect: false }
+        ],
+        rationale: "O particionamento de equivalência divide os dados em faixas representativas (válida, inválida abaixo, inválida acima), otimizando os testes sem perder cobertura."
+    },
+    {
+        questionNumber: 6,
+        question: "Um sistema de controle de estoque está em fase final. O cliente solicita uma rodada de testes para validar se todas as regras de negócio acordadas estão implementadas. Esse teste é:",
+        answerOptions: [
+            { text: "De integração", isCorrect: false },
+            { text: "De desempenho", isCorrect: false },
+            { text: "De aceitação", isCorrect: true },
+            { text: "De unidade", isCorrect: false }
+        ],
+        rationale: "O teste de aceitação é realizado para verificar se o sistema atende aos requisitos e regras de negócio, permitindo que seja entregue ao cliente."
+    },
+    {
+        questionNumber: 7,
+        question: "Após corrigir um erro no módulo de relatórios, outro módulo passou a apresentar falhas. Qual tipo de teste teria prevenido esse problema?",
+        answerOptions: [
+            { text: "Teste de segurança", isCorrect: false },
+            { text: "Teste de regressão", isCorrect: true },
+            { text: "Teste de aceitação", isCorrect: false },
+            { text: "Teste exploratório", isCorrect: false }
+        ],
+        rationale: "O teste de regressão verifica se funcionalidades anteriores continuam funcionando após alterações no código."
+    },
+    {
+        questionNumber: 8,
+        question: "Um desenvolvedor escreveu funções individuais para calcular descontos e decidiu testá-las isoladamente, verificando se cada função retorna o valor esperado. Esse procedimento representa:",
+        answerOptions: [
+            { text: "Teste de sistema", isCorrect: false },
+            { text: "Teste de unidade", isCorrect: true },
+            { text: "Teste de carga", isCorrect: false },
+            { text: "Teste de aceitação", isCorrect: false }
+        ],
+        rationale: "O teste de unidade verifica componentes isolados, geralmente no nível de funções ou métodos."
+    },
+    {
+        questionNumber: 9,
+        question: "Durante um teste funcional, o analista validou se, ao inserir um CPF inválido no formulário, o sistema bloqueava a operação. Nenhuma análise de código foi feita. Qual técnica de teste está sendo aplicada?",
+        answerOptions: [
+            { text: "Teste de caixa branca", isCorrect: false },
+            { text: "Teste de desempenho", isCorrect: false },
+            { text: "Teste de regressão", isCorrect: false },
+            { text: "Teste de caixa preta", isCorrect: true }
+        ],
+        rationale: "O teste de caixa preta valida as funcionalidades com base nas entradas e saídas, sem considerar a lógica interna do código."
+    },
+    {
+        questionNumber: 10,
+        question: "Durante o desenvolvimento de um sistema de agendamento, o analista de testes elabora um plano de testes. Qual é o principal objetivo desse documento?",
+        answerOptions: [
+            { text: "Registrar apenas os testes automatizados", isCorrect: false },
+            { text: "Listar os usuários responsáveis pela programação", isCorrect: false },
+            { text: "Planejar os tipos de testes, critérios de entrada e saída e escopo de validação", isCorrect: true },
+            { text: "Calcular o custo total do desenvolvimento", isCorrect: false }
+        ],
+        rationale: "O plano de testes orienta a execução dos testes e define o que, como e quando testar, alinhando a equipe aos objetivos do projeto."
+    },
+    {
+        questionNumber: 11,
+        question: "Uma equipe utiliza integração contínua (CI) e entrega contínua (CD) em um projeto. Qual o principal benefício dessa prática no ciclo de desenvolvimento?",
+        answerOptions: [
+            { text: "Evita o uso de ferramentas externas", isCorrect: false },
+            { text: "Reduz o uso de banco de dados", isCorrect: false },
+            { text: "Aumenta o número de programadores necessários", isCorrect: false },
+            { text: "Automatiza testes e entrega de versões com maior frequência e confiabilidade", isCorrect: true }
+        ],
+        rationale: "A integração e entrega contínua são práticas DevOps que automatizam testes e deploy, resultando em entregas mais ágeis e seguras."
+    },
+    {
+        questionNumber: 12,
+        question: "No exemplo abaixo em Python, o que representa o método `ligar()`?",
+        code: "class Lampada:\n    def ligar(self):\n        print(\"A lâmpada está ligada\")",
+        answerOptions: [
+            { text: "Um atributo da classe", isCorrect: false },
+            { text: "Um método estático", isCorrect: false },
+            { text: "Um comportamento da classe", isCorrect: true },
+            { text: "Um construtor padrão", isCorrect: false }
+        ],
+        rationale: "Os métodos representam comportamentos — ações que os objetos daquela classe podem executar."
+    },
+    {
+        questionNumber: 13,
+        question: "Qual das alternativas melhor representa o conceito de abstração em programação orientada a objetos?",
+        answerOptions: [
+            { text: "Esconder os detalhes da implementação e expor apenas o necessário", isCorrect: true },
+            { text: "Reaproveitar código de classes herdadas", isCorrect: false },
+            { text: "Estabelecer conexão direta entre o banco de dados e o sistema", isCorrect: false },
+            { text: "Reduzir o tamanho dos arquivos compilados", isCorrect: false }
+        ],
+        rationale: "A abstração oculta os detalhes da implementação, permitindo que o programador interaja apenas com o necessário."
+    },
+    {
+        questionNumber: 14,
+        question: "Em um código de verificação de senha, a seguinte estrutura foi utilizada. O que ela representa?",
+        code: "while senha != \"admin123\":\n    senha = input(\"Digite a senha: \")",
+        answerOptions: [
+            { text: "Laço for com incremento", isCorrect: false },
+            { text: "Laço infinito com condição falsa", isCorrect: false },
+            { text: "Laço while com condição de repetição", isCorrect: true },
+            { text: "Estrutura de decisão múltipla", isCorrect: false }
+        ],
+        rationale: "O `while` repete o bloco enquanto a condição (senha ser diferente de 'admin123') for verdadeira, útil para validação de entrada."
+    },
+    {
+        questionNumber: 15,
+        question: "Uma equipe optou por utilizar o Kanban para gerenciar as tarefas de um projeto. Ao final da sprint, um gargalo foi identificado na coluna \"Em Testes\". Qual ação é recomendada nesse caso?",
+        answerOptions: [
+            { text: "Ignorar os testes para acelerar a entrega", isCorrect: false },
+            { text: "Estender indefinidamente o prazo da sprint", isCorrect: false },
+            { text: "Revisar o limite de tarefas em andamento e reavaliar o fluxo", isCorrect: true },
+            { text: "Reduzir o backlog de funcionalidades", isCorrect: false }
+        ],
+        rationale: "O Kanban permite identificar gargalos visuais e ajustar o fluxo de trabalho, muitas vezes limitando o WIP (Work in Progress) para otimizar a vazão."
+    },
+    {
+        questionNumber: 16,
+        question: "Na programação orientada a objetos, o que representa um objeto?",
+        answerOptions: [
+            { text: "Um tipo de dado primitivo", isCorrect: false },
+            { text: "Um conjunto de funções reutilizáveis", isCorrect: false },
+            { text: "Uma instância concreta de uma classe", isCorrect: true },
+            { text: "Uma biblioteca de código externo", isCorrect: false }
+        ],
+        rationale: "O objeto é a instância de uma classe, ou seja, é o elemento concreto com dados e comportamentos definidos."
+    },
+    {
+        questionNumber: 17,
+        question: "Durante a análise de código em uma equipe de desenvolvimento, foram encontrados trechos com nomes de variáveis como `a1`, `x` e `temp2`, usados sem padrão ou clareza. Essa prática compromete:",
+        answerOptions: [
+            { text: "A lógica de programação", isCorrect: false },
+            { text: "O versionamento de código", isCorrect: false },
+            { text: "A manutenibilidade e legibilidade do sistema", isCorrect: true },
+            { text: "O desempenho do código", isCorrect: false }
+        ],
+        rationale: "Nomes não descritivos dificultam a leitura e manutenção, indo contra as boas práticas de programação."
+    },
+    {
+        questionNumber: 18,
+        question: "No Scrum, o Product Owner é responsável por:",
+        answerOptions: [
+            { text: "Programar todas as funcionalidades do sistema", isCorrect: false },
+            { text: "Garantir que o backlog esteja priorizado conforme o valor de negócio", isCorrect: true },
+            { text: "Gerenciar os bancos de dados do projeto", isCorrect: false },
+            { text: "Supervisionar os testes unitários", isCorrect: false }
+        ],
+        rationale: "O Product Owner é responsável por priorizar o backlog com base nas necessidades do cliente e valor de negócio."
+    },
+    {
+        questionNumber: 19,
+        question: "No seguinte exemplo em Java, qual conceito está sendo aplicado ao sobrescrever o método `emitirSom()`?",
+        code: "class Animal {\n    void emitirSom() { System.out.println(\"Som genérico\"); }\n}\n\nclass Cachorro extends Animal {\n    void emitirSom() { System.out.println(\"Latido\"); }\n}",
+        answerOptions: [
+            { text: "Herança e polimorfismo", isCorrect: true },
+            { text: "Recursão", isCorrect: false },
+            { text: "Composição", isCorrect: false },
+            { text: "Abstração pura", isCorrect: false }
+        ],
+        rationale: "O código mostra herança (classe `Cachorro` herda de `Animal`) e polimorfismo (sobrescrita do método `emitirSom`)."
+    },
+    {
+        questionNumber: 20,
+        question: "Ao desenvolver um sistema de reservas de passagens, um aluno criou várias funções separadas como `calcularPreco()`, `validarData()` e `gerarRelatorio()`. Essa prática representa qual técnica de programação?",
+        answerOptions: [
+            { text: "Orientação a aspectos", isCorrect: false },
+            { text: "Modularização", isCorrect: true },
+            { text: "Recursividade", isCorrect: false },
+            { text: "Encapsulamento", isCorrect: false }
+        ],
+        rationale: "A modularização consiste em dividir o sistema em partes (módulos ou funções) reutilizáveis e organizadas, facilitando a manutenção."
+    },
+    {
+        questionNumber: 21,
+        question: "Durante testes de integração entre dois sistemas web, foi identificado que dados sensíveis (como senhas e CPF) estavam sendo trafegados em texto plano via HTTP. Qual medida deve ser adotada para resolver esse problema?",
+        answerOptions: [
+            { text: "Criptografar os dados apenas no banco de dados", isCorrect: false },
+            { text: "Substituir o protocolo HTTP por HTTPS, com certificado SSL", isCorrect: true },
+            { text: "Utilizar senhas numéricas simples para facilitar testes", isCorrect: false },
+            { text: "Salvar os dados em cookies para acelerar o carregamento", isCorrect: false }
+        ],
+        rationale: "O protocolo HTTPS utiliza SSL/TLS, garantindo que as informações trafeguem criptografadas, protegendo a comunicação entre sistemas."
+    },
+    {
+        questionNumber: 22,
+        question: "Em uma solução corporativa, um middleware é utilizado para conectar o sistema de vendas com o sistema logístico, traduzindo os formatos de mensagens entre eles. Qual é a principal função desse middleware?",
+        answerOptions: [
+            { text: "Armazenar cópias dos bancos de dados", isCorrect: false },
+            { text: "Controlar os usuários de ambos os sistemas", isCorrect: false },
+            { text: "Atuar como ponte de comunicação e adaptação de protocolos entre sistemas diferentes", isCorrect: true },
+            { text: "Proteger o código-fonte dos dois sistemas", isCorrect: false }
+        ],
+        rationale: "O middleware atua como camada intermediária, adaptando formatos de dados e garantindo que sistemas distintos consigam se comunicar corretamente."
+    },
+    {
+        questionNumber: 23,
+        question: "Durante a integração entre o módulo de login de um sistema legado e um novo sistema de atendimento, um desenvolvedor criou uma biblioteca compartilhada com as regras de autenticação. Qual prática contribui para manter a integridade dessa integração ao longo do tempo?",
+        answerOptions: [
+            { text: "Reescrever o módulo de login a cada nova versão", isCorrect: false },
+            { text: "Utilizar controle de versão (como Git) e versionamento de APIs/bibliotecas", isCorrect: true },
+            { text: "Armazenar a biblioteca em uma pasta pública e compartilhar por e-mail", isCorrect: false },
+            { text: "Criar versões diferentes da biblioteca para cada usuário", isCorrect: false }
+        ],
+        rationale: "O controle de versão e o versionamento das APIs são essenciais para garantir compatibilidade, rastreabilidade e segurança nas integrações."
+    },
+    {
+        questionNumber: 24,
+        question: "Uma empresa utiliza um sistema de gestão ERP escrito em Java e precisa integrá-lo a um sistema financeiro em PHP para troca de dados de faturamento. Qual das abordagens abaixo representa uma boa prática para viabilizar essa comunicação entre plataformas distintas?",
+        answerOptions: [
+            { text: "Exportar os dados em arquivos CSV e importar manualmente toda semana", isCorrect: false },
+            { text: "Utilizar banco de dados compartilhado entre os dois sistemas", isCorrect: false },
+            { text: "Criar e consumir uma API RESTful padronizada entre os sistemas", isCorrect: true },
+            { text: "Converter o código PHP para Java", isCorrect: false }
+        ],
+        rationale: "A criação de APIs RESTful permite que sistemas desenvolvidos em linguagens diferentes se comuniquem de forma segura e padronizada."
+    },
+    {
+        questionNumber: 25,
+        question: "Durante a implantação de um módulo de rastreamento em um sistema de entregas, foi necessário obter a localização dos veículos de uma empresa parceira, utilizando uma API externa com resposta em JSON. Qual recurso é mais comumente utilizado nesse tipo de integração?",
+        answerOptions: [
+            { text: "Chamadas diretas ao banco de dados remoto da empresa parceira", isCorrect: false },
+            { text: "Uso de bibliotecas que fazem requisições HTTP (como fetch, axios ou requests)", isCorrect: true },
+            { text: "Envio de arquivos via FTP entre os servidores", isCorrect: false },
+            { text: "Compartilhamento de pastas via rede local", isCorrect: false }
+        ],
+        rationale: "A integração entre sistemas modernos é feita via APIs, e bibliotecas HTTP são usadas para fazer requisições e tratar respostas JSON."
+    },
+    {
+        questionNumber: 26,
+        question: "Em um projeto de software, qual das opções abaixo representa uma sequência lógica de aplicação das técnicas de modelagem?",
+        answerOptions: [
+            { text: "Modelagem física -> levantamento de requisitos -> diagrama de casos de uso", isCorrect: false },
+            { text: "Levantamento de requisitos -> definição de regras de negócio -> modelagem lógica -> modelagem física", isCorrect: true },
+            { text: "Codificação -> modelagem lógica -> diagrama de classes", isCorrect: false },
+            { text: "Análise de código -> modelagem física -> levantamento de requisitos", isCorrect: false }
+        ],
+        rationale: "A sequência correta é: levantar requisitos, definir regras de negócio, criar modelos conceitual, lógico e físico para projetar o sistema antes da codificação."
+    },
+    {
+        questionNumber: 27,
+        question: "O que é representado pelas linhas com losango preto (composição) entre duas classes em um Diagrama de Classes UML?",
+        answerOptions: [
+            { text: "Relação de herança", isCorrect: false },
+            { text: "Associação entre classes opcionais", isCorrect: false },
+            { text: "Composição - uma relação onde a parte não existe sem o todo", isCorrect: true },
+            { text: "Generalização - uma relação entre entidade e ator", isCorrect: false }
+        ],
+        rationale: "A composição indica que uma classe faz parte de outra e não pode existir separadamente (ex: Motor faz parte de Carro)."
+    },
+    {
+        questionNumber: 28,
+        question: "Durante o desenvolvimento de um sistema financeiro, o cliente afirma: \"Só gerentes podem autorizar transações acima de R$10.000\". O analista esqueceu de representar essa condição nos casos de uso. Qual consequência isso pode gerar?",
+        answerOptions: [
+            { text: "A funcionalidade será executada mais rapidamente", isCorrect: false },
+            { text: "O sistema ficará mais seguro", isCorrect: false },
+            { text: "Haverá um descasamento entre o sistema implementado e as regras de negócio acordadas", isCorrect: true },
+            { text: "Essa restrição será automaticamente tratada pelo banco de dados", isCorrect: false }
+        ],
+        rationale: "A ausência dessa regra de negócio compromete a consistência entre o sistema e os requisitos definidos com o cliente."
+    },
+    {
+        questionNumber: 29,
+        question: "Qual é o principal objetivo do Diagrama de Casos de Uso na UML?",
+        answerOptions: [
+            { text: "Definir a estrutura física do banco de dados", isCorrect: false },
+            { text: "Descrever visualmente os fluxos de exceção", isCorrect: false },
+            { text: "Mapear os requisitos do sistema a partir das interações com os usuários", isCorrect: true },
+            { text: "Definir o algoritmo de cada função do sistema", isCorrect: false }
+        ],
+        rationale: "O Diagrama de Casos de Uso representa funcionalidades esperadas e interações dos usuários (atores) com o sistema."
+    },
+    {
+        questionNumber: 30,
+        question: "Considere a seguinte classe UML. Qual das alternativas representa corretamente uma característica desse diagrama?",
+        code: "Classe: Pedido\n+id: int\n+data: date\n-total: float\n+calcularTotal(): float",
+        answerOptions: [
+            { text: "O atributo total é privado, e o método calcularTotal() é público", isCorrect: true },
+            { text: "O atributo total é um método", isCorrect: false },
+            { text: "Todos os atributos são protegidos", isCorrect: false },
+            { text: "+id e -total indicam métodos estáticos", isCorrect: false }
+        ],
+        rationale: "O símbolo `+` indica visibilidade pública e o `-` indica visibilidade privada; métodos são definidos com parênteses."
+    },
+    {
+        questionNumber: 31,
+        question: "Um dos requisitos definidos para um sistema web é que ele esteja disponível 24h por dia, com 99% de uptime. Esse requisito é:",
+        answerOptions: [
+            { text: "Requisito funcional", isCorrect: false },
+            { text: "Requisito não funcional", isCorrect: true },
+            { text: "Regra de negócio", isCorrect: false },
+            { text: "Caso de uso", isCorrect: false }
+        ],
+        rationale: "Requisitos não funcionais definem qualidades do sistema, como desempenho, disponibilidade e segurança."
+    },
+    {
+        questionNumber: 32,
+        question: "No Diagrama de Atividades, o processo de compra online envolve: seleção do produto -> confirmação de estoque -> pagamento -> geração de nota fiscal -> envio. O que caracteriza esse tipo de modelagem?",
+        answerOptions: [
+            { text: "Representa as regras de negócio em formato textual", isCorrect: false },
+            { text: "Mostra o fluxo de navegação entre páginas do sistema", isCorrect: false },
+            { text: "Representa o fluxo de ações que ocorrem no sistema ou processo", isCorrect: true },
+            { text: "É usado apenas em projetos com múltiplos atores", isCorrect: false }
+        ],
+        rationale: "O Diagrama de Atividades modela o fluxo de execução de tarefas ou ações dentro de um processo."
+    },
+    {
+        questionNumber: 33,
+        question: "Em um sistema de biblioteca, qual dos elementos abaixo representa corretamente um ator em um Diagrama de Casos de Uso UML?",
+        answerOptions: [
+            { text: "\"Gerar relatório de empréstimos\"", isCorrect: false },
+            { text: "\"Funcionário do balcão\"", isCorrect: true },
+            { text: "\"Cadastro de livro\"", isCorrect: false },
+            { text: "\"Data de devolução\"", isCorrect: false }
+        ],
+        rationale: "O ator representa quem interage com o sistema — uma pessoa ou outro sistema externo."
+    },
+    {
+        questionNumber: 34,
+        question: "Em um sistema de matrícula escolar, a regra de negócio estabelece que alunos com débitos pendentes não podem gerar boletos de nova matrícula. Qual alternativa melhor representa o papel dessa informação no processo de modelagem?",
+        answerOptions: [
+            { text: "Trata-se de um requisito técnico de banco de dados", isCorrect: false },
+            { text: "É uma validação condicional opcional", isCorrect: false },
+            { text: "É uma regra de negócio que precisa ser documentada e validada com o cliente", isCorrect: true },
+            { text: "Pode ser ignorada, pois é responsabilidade do setor financeiro", isCorrect: false }
+        ],
+        rationale: "Regras de negócio devem ser documentadas e tratadas na modelagem, pois impactam diretamente no funcionamento do sistema."
+    },
+    {
+        questionNumber: 35,
+        question: "Durante uma reunião de levantamento de requisitos, o analista questiona o cliente sobre como os usuários realizarão login no sistema e se haverá níveis de acesso. Esse tipo de requisito é classificado como:",
+        answerOptions: [
+            { text: "Requisito técnico", isCorrect: false },
+            { text: "Requisito não funcional", isCorrect: false },
+            { text: "Requisito de segurança", isCorrect: false },
+            { text: "Requisito funcional", isCorrect: true }
+        ],
+        rationale: "Um requisito funcional descreve o comportamento do sistema, como login e níveis de acesso."
+    },
+    {
+        questionNumber: 36,
+        question: "Durante a publicação de um sistema web para uso externo, o técnico decide configurar HTTPS utilizando um certificado SSL válido. Ele opta pelo Let's Encrypt por ser gratuito. Qual comando Linux ele pode utilizar para automatizar a obtenção e renovação do certificado?",
+        answerOptions: [
+            { text: "certbot --apache", isCorrect: true },
+            { text: "mysql_secure_installation", isCorrect: false },
+            { text: "openssl encrypt --all", isCorrect: false },
+            { text: "a2enmod php7.4", isCorrect: false }
+        ],
+        rationale: "O certbot é a ferramenta oficial recomendada pelo Let's Encrypt para emitir e renovar certificados SSL em servidores web como o Apache."
+    },
+    {
+        questionNumber: 37,
+        question: "Uma empresa configurou corretamente seu sistema web no servidor e deseja agora que ele possa ser acessado através do domínio www.minhaempresa.com.br. O DNS já está contratado. Qual configuração é necessária para essa funcionalidade?",
+        answerOptions: [
+            { text: "Criar uma conta de e-mail com o mesmo nome do domínio", isCorrect: false },
+            { text: "Adicionar uma entrada do tipo A no DNS apontando para o IP do servidor", isCorrect: true },
+            { text: "Instalar um certificado SSL autoassinado", isCorrect: false },
+            { text: "Criar um banco de dados com o nome do domínio", isCorrect: false }
+        ],
+        rationale: "A entrada tipo A (Address) vincula o nome de domínio ao endereço IP do servidor, permitindo o acesso via navegador."
+    },
+    {
+        questionNumber: 38,
+        question: "Durante a configuração de um ambiente de testes local, um desenvolvedor instala um servidor Apache e copia um projeto em PHP com acesso ao banco MySQL. Ao tentar acessar o sistema, recebe o erro: \"Call to undefined function mysqli_connect()\". Qual pacote está provavelmente ausente?",
+        answerOptions: [
+            { text: "php-mbstring", isCorrect: false },
+            { text: "php-curl", isCorrect: false },
+            { text: "php-mysql", isCorrect: true },
+            { text: "libapache2-mod-wsgi", isCorrect: false }
+        ],
+        rationale: "A função `mysqli_connect()` faz parte da extensão de conexão do PHP com o MySQL, que precisa ser instalada e habilitada."
+    },
+    {
+        questionNumber: 39,
+        question: "Durante a implantação de um sistema ERP, o técnico precisa configurar o banco de dados MySQL. Após instalar o serviço, ele tenta acessar com o comando `mysql -u root -p`, mas recebe erro de conexão. Qual das ações abaixo pode corrigir o problema?",
+        answerOptions: [
+            { text: "Reiniciar o computador do cliente", isCorrect: false },
+            { text: "Verificar se o serviço MySQL está ativo com `systemctl status mysql`", isCorrect: true },
+            { text: "Reinstalar o navegador Google Chrome", isCorrect: false },
+            { text: "Copiar os arquivos do sistema para o diretório /usr/bin", isCorrect: false }
+        ],
+        rationale: "Antes de tentar conectar, é essencial verificar se o serviço do banco de dados está em execução. O serviço pode não ter iniciado ou pode ter apresentado algum erro."
+    },
+    {
+        questionNumber: 40,
+        question: "Um técnico de TI está configurando um servidor web com Apache em um sistema Linux para hospedar um sistema interno de gestão escolar. Após instalar o Apache e mover os arquivos do sistema para o diretório `/var/www/html`, o sistema não está acessível via navegador. Qual dos comandos abaixo pode ser necessário para liberar o acesso à porta padrão do serviço HTTP?",
+        answerOptions: [
+            { text: "`chmod 777 *` no diretório do projeto", isCorrect: false },
+            { text: "`iptables -A INPUT -p tcp --dport 80 -j ACCEPT`", isCorrect: true },
+            { text: "`killall apache2`", isCorrect: false },
+            { text: "`nano /etc/passwd`", isCorrect: false }
+        ],
+        rationale: "Este comando adiciona uma regra ao firewall (`iptables`) para permitir o tráfego de entrada (`INPUT`) na porta 80 (HTTP), que pode estar bloqueada por padrão."
+    },
+    {
+        questionNumber: 41,
+        question: "Um projeto educacional com Arduino utiliza motores, sensores ultrassônicos e programação estruturada para criar um robô que evita obstáculos automaticamente. Qual característica desse robô o classifica como um sistema robótico autônomo?",
+        answerOptions: [
+            { text: "Ele depende de controle remoto para mudar de direção.", isCorrect: false },
+            { text: "Suas decisões são baseadas em sensores sem intervenção humana direta.", isCorrect: true },
+            { text: "Ele executa sempre a mesma rota fixa, programada manualmente.", isCorrect: false },
+            { text: "Seu funcionamento ocorre apenas quando conectado ao computador.", isCorrect: false }
+        ],
+        rationale: "Um robô autônomo toma decisões com base na percepção do ambiente (sensores), ajustando seu comportamento sem controle direto humano."
+    },
+    {
+        questionNumber: 42,
+        question: "Em um sistema de ventilação inteligente, o Arduino controla um motor DC que precisa variar sua velocidade conforme a temperatura. Qual componente é essencial para permitir o controle do motor com segurança, considerando a limitação de corrente do Arduino?",
+        answerOptions: [
+            { text: "Sensor DHT11", isCorrect: false },
+            { text: "Transistor ou módulo driver (ex: L298N)", isCorrect: true },
+            { text: "Potenciômetro", isCorrect: false },
+            { text: "Display LCD", isCorrect: false }
+        ],
+        rationale: "Motores consomem mais corrente do que o Arduino pode fornecer. Um transistor ou um módulo driver atua como um interruptor eletrônico, usando o sinal de baixa corrente do Arduino para controlar o fluxo de alta corrente da fonte de alimentação para o motor."
+    },
+    {
+        questionNumber: 43,
+        question: "Uma empresa está desenvolvendo um dispositivo de monitoramento ambiental em áreas remotas. O sistema deverá funcionar com bateria por longos períodos e enviar dados de temperatura e umidade via rádio LoRa. Qual microcontrolador seria mais indicado para esse cenário?",
+        answerOptions: [
+            { text: "Raspberry Pi 4 com Wi-Fi", isCorrect: false },
+            { text: "Arduino UNO com módulo Bluetooth", isCorrect: false },
+            { text: "ESP32 com conexão Ethernet", isCorrect: false },
+            { text: "ESP32 LoRa com modo de economia de energia (deep sleep)", isCorrect: true }
+        ],
+        rationale: "O ESP32 com LoRa integrado combina conectividade de longo alcance e baixa potência (LoRa) com modos de hibernação profunda (deep sleep), ideal para projetos em campo que dependem de bateria."
+    },
+    {
+        questionNumber: 44,
+        question: "Em um robô seguidor de linha, sensores infravermelhos são usados para detectar a presença da linha preta no chão. A programação implementa a seguinte lógica. O que ela permite ao robô?",
+        code: "SE sensor_direita = branco E sensor_esquerda = preto ENTAO\n    virar_esquerda()\nSENAO SE sensor_direita = preto E sensor_esquerda = branco ENTAO\n    virar_direita()\nSENAO\n    seguir_em_frente()\nFIMSE",
+        answerOptions: [
+            { text: "Reagir ao toque em obstáculos físicos.", isCorrect: false },
+            { text: "Tomar decisões com base em luminosidade ambiente.", isCorrect: false },
+            { text: "Alinhar sua rota com base na detecção da linha pelo contraste de cor.", isCorrect: true },
+            { text: "Detectar comandos por voz para navegação autônoma.", isCorrect: false }
+        ],
+        rationale: "O robô ajusta seu movimento (vira para a esquerda ou direita) para se manter centralizado na linha, com base nas leituras dos sensores que detectam o contraste de cor (preto vs. branco)."
+    },
+    {
+        questionNumber: 45,
+        question: "Durante o desenvolvimento de um sistema de irrigação inteligente, foi utilizado um microcontrolador ESP32 conectado via Wi-Fi. O dispositivo envia os dados de umidade do solo para uma API REST hospedada em nuvem. Qual tecnologia está sendo utilizada para viabilizar essa comunicação?",
+        answerOptions: [
+            { text: "Comunicação serial UART entre dois microcontroladores", isCorrect: false },
+            { text: "Protocolo MQTT para envio de imagens", isCorrect: false },
+            { text: "Comunicação sem fio por Wi-Fi com protocolo HTTP", isCorrect: true },
+            { text: "Upload manual dos dados por cabo USB", isCorrect: false }
+        ],
+        rationale: "O ESP32 utiliza sua capacidade Wi-Fi para se conectar a redes sem fio e o protocolo HTTP para se comunicar com serviços web, como APIs REST."
+    },
+    {
+        questionNumber: 46,
+        question: "Um programador argumenta que, para microcontroladores de baixo custo, como o Arduino UNO, a linguagem estruturada em C é preferível à programação orientada a objetos. Qual justificativa técnica é mais adequada?",
+        answerOptions: [
+            { text: "Programação orientada a objetos é mais rápida e consome menos memória.", isCorrect: false },
+            { text: "C é uma linguagem puramente gráfica, ideal para sistemas embarcados.", isCorrect: false },
+            { text: "Programação estruturada é mais leve e adequada a dispositivos com poucos recursos.", isCorrect: true },
+            { text: "O uso de objetos acelera a leitura de sensores em microcontroladores.", isCorrect: false }
+        ],
+        rationale: "A programação estruturada, como a usada em C no Arduino, tende a gerar código menor e consumir menos memória, sendo mais adequada para dispositivos com recursos limitados."
+    },
+    {
+        questionNumber: 47,
+        question: "Observe o seguinte trecho em linguagem C utilizado em um sistema IoT. Em que situação a função `ligarLuz()` será executada?",
+        code: "if (presenca == 1 && luz == 0) {\n    ligarLuz();\n}",
+        answerOptions: [
+            { text: "Sempre que a variável presenca for igual a 1", isCorrect: false },
+            { text: "Quando houver presença e a luz já estiver acesa.", isCorrect: false },
+            { text: "Quando houver presença e a luz estiver apagada.", isCorrect: true },
+            { text: "Quando não houver presença e a luz estiver apagada.", isCorrect: false }
+        ],
+        rationale: "O operador `&&` (E) exige que ambas as condições sejam verdadeiras. A luz será ligada apenas se `presenca` for 1 (houver presença) e `luz` for 0 (estiver apagada)."
+    },
+    {
+        questionNumber: 48,
+        question: "Um aluno programou um sistema para acender uma luz com base na leitura de um sensor de luminosidade. Ele criou uma função em C chamada `verificaLuminosidade()`. Qual a vantagem de utilizar funções em um programa estruturado?",
+        answerOptions: [
+            { text: "Diminui o tempo de execução do programa.", isCorrect: false },
+            { text: "Substitui a necessidade de variáveis.", isCorrect: false },
+            { text: "Aumenta a repetição de código e esforço de leitura.", isCorrect: false },
+            { text: "Favorece reutilização, clareza e manutenção do código.", isCorrect: true }
+        ],
+        rationale: "Funções promovem a modularização, permitindo que o código seja reutilizado e tornando o programa mais organizado, fácil de ler e de manter."
+    },
+    {
+        questionNumber: 49,
+        question: "Considere o seguinte pseudocódigo de um sistema IoT que realiza a média de 5 leituras de um sensor. Qual alternativa descreve corretamente o comportamento desse código?",
+        code: "total <- 0\nPARA i <- 1 ATÉ 5 FAÇA\n    leitura <- sensor.lembrar()\n    total <- total + leitura\nFIMPARA\nmedia <- total / 5",
+        answerOptions: [
+            { text: "O sensor será lido uma única vez e multiplicado por 5.", isCorrect: false },
+            { text: "A média será calculada com base em 5 leituras consecutivas.", isCorrect: true },
+            { text: "A média será sempre zero, pois a variável total não é inicializada.", isCorrect: false },
+            { text: "O laço deve começar de i=0 para funcionar corretamente.", isCorrect: false }
+        ],
+        rationale: "O laço `PARA` executa 5 vezes, acumulando o valor de cada leitura na variável `total`, e ao final a média é calculada."
+    },
+    {
+        questionNumber: 50,
+        question: "Em um projeto de automação residencial com ESP32, o seguinte trecho de código em C foi usado para acionar um alarme caso a temperatura ultrapasse 30°C. Qual das alternativas representa corretamente o comportamento desse código?",
+        code: "if (temperatura > 30) {\n    ligarAlarme();\n} else {\n    desligarAlarme();\n}",
+        answerOptions: [
+            { text: "O alarme será desligado se a temperatura estiver abaixo de 35°C.", isCorrect: false },
+            { text: "O alarme será ligado apenas se a temperatura for exatamente 30°C.", isCorrect: false },
+            { text: "O alarme será acionado somente se a temperatura for superior a 30°C.", isCorrect: true },
+            { text: "O código possui erro de sintaxe por falta de ponto e vírgula.", isCorrect: false }
+        ],
+        rationale: "A condição `if (temperatura > 30)` compara se a variável `temperatura` é maior que 30; caso verdadeiro, a função `ligarAlarme()` é chamada."
+    },
+    {
+        questionNumber: 51,
+        question: "Uma empresa de e-commerce apresenta lentidão nas consultas, pois o banco de dados é altamente normalizado até a 3FN. O gerente de dados sugere a criação de tabelas desnormalizadas específicas para relatórios. Qual a principal vantagem dessa decisão?",
+        answerOptions: [
+            { text: "Aumentar o consumo de armazenamento em disco.", isCorrect: false },
+            { text: "Diminuir a integridade dos dados e facilitar erros.", isCorrect: false },
+            { text: "Melhorar a performance de leitura em operações analíticas.", isCorrect: true },
+            { text: "Impedir atualizações simultâneas nas tabelas.", isCorrect: false }
+        ],
+        rationale: "A desnormalização reduz a necessidade de `JOINs` complexos, o que acelera significativamente as consultas de leitura, sendo uma prática comum para otimizar relatórios e dashboards."
+    },
+    {
+        questionNumber: 52,
+        question: "Em um sistema ERP, a tabela `pedidos` possui um campo `id_cliente` que referencia a tabela `clientes`. Um desenvolvedor relatou que conseguiu excluir um cliente que ainda tinha pedidos registrados. O que provavelmente está ausente na modelagem do banco?",
+        answerOptions: [
+            { text: "Um índice de otimização no campo `id_cliente`", isCorrect: false },
+            { text: "A cláusula FOREIGN KEY com ação ON DELETE", isCorrect: true },
+            { text: "A declaração da chave primária na tabela `pedidos`", isCorrect: false },
+            { text: "A permissão de leitura para o usuário administrador", isCorrect: false }
+        ],
+        rationale: "Uma restrição de chave estrangeira (FOREIGN KEY) impediria a exclusão de um cliente com pedidos associados. Ações como `ON DELETE RESTRICT` ou `ON DELETE CASCADE` garantiriam a integridade referencial."
+    },
+    {
+        questionNumber: 53,
+        question: "Uma equipe técnica identificou que a tabela `funcionarios` possui os campos `id_funcionario`, `nome`, `id_departamento`, `nome_departamento`, `email_gerente_departamento`. Para atingir a Terceira Forma Normal, qual ação é mais adequada?",
+        answerOptions: [
+            { text: "Dividir a tabela e criar uma nova entidade `departamentos` com chave primária `id_departamento`", isCorrect: true },
+            { text: "Unificar os campos departamento e gerente na mesma tabela", isCorrect: false },
+            { text: "Criar uma tabela com todos os nomes únicos de funcionários", isCorrect: false },
+            { text: "Incluir uma chave estrangeira de email para departamentos", isCorrect: false }
+        ],
+        rationale: "A 3FN exige a eliminação de dependências transitivas. Os campos `nome_departamento` e `email_gerente_departamento` dependem de `id_departamento`, que não é a chave primária. Portanto, eles devem ser movidos para uma tabela `departamentos`."
+    },
+    {
+        questionNumber: 54,
+        question: "Durante uma auditoria de segurança, foi identificado que o seguinte comando foi executado no banco de dados. Qual o impacto direto no sistema?",
+        code: "REVOKE INSERT, DELETE ON vendas FROM estagiario;",
+        answerOptions: [
+            { text: "O usuário \"estagiario\" perde permissão de leitura da tabela `vendas`.", isCorrect: false },
+            { text: "O banco de dados é restaurado ao estado anterior.", isCorrect: false },
+            { text: "O estagiário não poderá mais inserir ou excluir registros na tabela `vendas`.", isCorrect: true },
+            { text: "O estagiário ganha permissão para modificar a estrutura da tabela.", isCorrect: false }
+        ],
+        rationale: "O comando `REVOKE` da linguagem DCL remove permissões específicas de um usuário — neste caso, as permissões de inserção e exclusão na tabela `vendas`."
+    },
+    {
+        questionNumber: 55,
+        question: "Durante a fase de análise de um sistema de gerenciamento hospitalar, a equipe de desenvolvimento criou um diagrama ER (Entidade-Relacionamento) com as entidades Paciente, Consulta e Médico. Na etapa seguinte, esse diagrama foi convertido em uma estrutura tabular contendo os atributos e os relacionamentos com suas chaves. Qual é a denominação correta dessa transformação?",
+        answerOptions: [
+            { text: "Do modelo lógico para o modelo físico", isCorrect: false },
+            { text: "Do modelo físico para o modelo conceitual", isCorrect: false },
+            { text: "Do modelo conceitual para o modelo lógico", isCorrect: true },
+            { text: "Do modelo lógico para o diagrama ER", isCorrect: false }
+        ],
+        rationale: "O modelo conceitual (representado pelo diagrama ER) foca nas entidades e seus relacionamentos. A sua transformação em uma estrutura de tabelas com chaves primárias e estrangeiras corresponde à criação do modelo lógico."
+    },
+    {
+        questionNumber: 56,
+        question: "Uma tabela de vendas contém os campos: `id_venda`, `data`, `cpf_cliente`, `nome_cliente`, `produto`, `preco_unitario`, `quantidade`, `total`. Após análise, o desenvolvedor propõe separar os dados do cliente e do produto em tabelas distintas. Qual o objetivo principal dessa proposta?",
+        answerOptions: [
+            { text: "Aumentar a quantidade de tabelas para dificultar consultas.", isCorrect: false },
+            { text: "Diminuir a necessidade de usar chaves primárias.", isCorrect: false },
+            { text: "Cumprir a Terceira Forma Normal, que busca eliminar dependências transitivas.", isCorrect: true },
+            { text: "Melhorar a aparência do banco de dados visualmente.", isCorrect: false }
+        ],
+        rationale: "Campos como `nome_cliente` dependem de `cpf_cliente` (e não da chave `id_venda`). Separar esses dados em tabelas `Clientes` e `Produtos` elimina essas dependências e a redundância, alinhando o modelo à 3FN."
+    },
+    {
+        questionNumber: 57,
+        question: "Durante a configuração do sistema em produção, o DBA (Administrador de Banco de Dados) precisou garantir que um usuário do sistema possa consultar informações da tabela `funcionarios`, mas sem permitir inserções ou exclusões. Qual comando SQL atende corretamente a essa necessidade?",
+        answerOptions: [
+            { text: "GRANT SELECT ON funcionarios TO usuario;", isCorrect: true },
+            { text: "GRANT ALL PRIVILEGES ON funcionarios TO usuario;", isCorrect: false },
+            { text: "DELETE FROM funcionarios WHERE usuario = 'usuario';", isCorrect: false },
+            { text: "INSERT INTO funcionarios VALUES (...);", isCorrect: false }
+        ],
+        rationale: "O comando `GRANT SELECT` pertence à DCL (Linguagem de Controle de Dados) e concede permissão somente de leitura (`SELECT`) a um usuário específico em uma tabela."
+    },
+    {
+        questionNumber: 58,
+        question: "Um banco de dados armazena informações de clientes e endereços diretamente na mesma tabela. Ao analisar a estrutura, um analista percebe que muitos endereços se repetem entre diferentes clientes. Qual seria a técnica ideal para reorganizar esses dados e evitar a redundância?",
+        answerOptions: [
+            { text: "Adicionar um campo \"observações\" na mesma tabela.", isCorrect: false },
+            { text: "Aplicar a normalização e mover os dados repetitivos para uma nova tabela de endereços.", isCorrect: true },
+            { text: "Criar uma tabela temporária com todos os endereços.", isCorrect: false },
+            { text: "Converter os dados para uma planilha e reimportar.", isCorrect: false }
+        ],
+        rationale: "A normalização (especificamente a passagem para a 2FN ou 3FN) propõe eliminar dados repetidos separando-os em outras tabelas (como uma tabela `Enderecos`) e usando chaves estrangeiras para manter o relacionamento."
+    },
+    {
+        questionNumber: 59,
+        question: "Um desenvolvedor precisa criar uma nova tabela para armazenar registros de pedidos com as colunas `id`, `data_pedido` e `valor_total`. Qual comando abaixo representa corretamente essa ação?",
+        answerOptions: [
+            { text: "INSERT INTO pedidos VALUES (...);", isCorrect: false },
+            { text: "UPDATE pedidos SET valor_total = 0;", isCorrect: false },
+            { text: "CREATE TABLE pedidos (id INT, data_pedido DATE, valor_total DECIMAL(10,2));", isCorrect: true },
+            { text: "GRANT SELECT ON pedidos TO usuario;", isCorrect: false }
+        ],
+        rationale: "O comando `CREATE TABLE` pertence à DDL (Linguagem de Definição de Dados) e é utilizado para definir a estrutura de uma nova tabela."
+    },
+    {
+        questionNumber: 60,
+        question: "Durante uma tarefa de manutenção em um sistema de cadastro de clientes, o analista executou o seguinte comando SQL. Com base na linguagem SQL, esse comando faz parte de qual subconjunto da linguagem?",
+        code: "UPDATE clientes SET email = 'novoemail@exemplo.com' WHERE id = 1;",
+        answerOptions: [
+            { text: "DDL - Data Definition Language", isCorrect: false },
+            { text: "DML - Data Manipulation Language", isCorrect: true },
+            { text: "DCL - Data Control Language", isCorrect: false },
+            { text: "TCL - Transaction Control Language", isCorrect: false }
+        ],
+        rationale: "O comando `UPDATE` altera dados existentes em uma tabela, sendo parte da DML (linguagem de manipulação de dados), assim como `INSERT` e `DELETE`."
+    },
+    {
+        questionNumber: 61,
+        question: "Um desenvolvedor precisa localizar o número 35 em uma lista de inteiros, usando busca sequencial. Qual será o valor final da variável `i` ao término da execução do algoritmo?",
+        code: "lista <- [12, 22, 35, 40]\nachou <- falso\ni <- 0\nENQUANTO i < tamanho(lista) E achou = falso FAÇA\n    SE lista[i] = 35 ENTAO\n        achou <- verdadeiro\n    SENAO\n        i <- i + 1\n    FIMSE\nFIMENQUANTO",
+        answerOptions: [
+            { text: "2", isCorrect: true },
+            { text: "3", isCorrect: false },
+            { text: "0", isCorrect: false },
+            { text: "4", isCorrect: false }
+        ],
+        rationale: "O laço para quando `achou` se torna `verdadeiro`. Isso acontece quando `i` é 2 (posição do número 35). Como o incremento de `i` está no `SENAO`, `i` não é mais incrementado e termina com o valor 2."
+    },
+    {
+        questionNumber: 62,
+        question: "Um sistema de vendas possui uma lista de produtos, e o objetivo é ordenar a lista pelo preço crescente. Após a ordenação, qual será o primeiro item da lista?",
+        code: "produtos = [\n    {\"nome\": \"Mouse\", \"preco\": 90},\n    {\"nome\": \"Teclado\", \"preco\": 120},\n    {\"nome\": \"Monitor\", \"preco\": 850}\n]\nprodutos.sort(key=lambda p: p[\"preco\"])",
+        answerOptions: [
+            { text: "Monitor", isCorrect: false },
+            { text: "Teclado", isCorrect: false },
+            { text: "Mouse", isCorrect: true },
+            { text: "Nenhum, o código está incorreto", isCorrect: false }
+        ],
+        rationale: "O método `sort()` com a `key` especificada ordena a lista com base no valor do campo 'preco', do menor para o maior. O item mais barato é o Mouse (preço 90)."
+    },
+    {
+        questionNumber: 63,
+        question: "Um sistema simula uma pilha (stack) para registrar as últimas ações do usuário. Após a execução do código, qual será o conteúdo da lista `acoes`?",
+        code: "acoes = []\nacoes.append(\"abrir menu\")\nacoes.append(\"clicar botão\")\nacoes.append(\"voltar\")\nacoes.pop()",
+        answerOptions: [
+            { text: "[\"abrir menu\", \"clicar botão\", \"voltar\"]", isCorrect: false },
+            { text: "[\"abrir menu\", \"clicar botão\"]", isCorrect: true },
+            { text: "[\"abrir menu\"]", isCorrect: false },
+            { text: "[]", isCorrect: false }
+        ],
+        rationale: "Uma pilha segue a lógica LIFO (Last In, First Out). O `append` adiciona no topo e o `pop()` remove do topo. O último item adicionado ('voltar') é removido, restando os dois anteriores."
+    },
+    {
+        questionNumber: 64,
+        question: "Qual será a saída exibida ao executar o código em pseudocódigo a seguir?",
+        code: "idade <- 17\ntem_autorizacao <- verdadeiro\npode_entrar <- (idade >= 18) OU tem_autorizacao\nSE pode_entrar ENTAO\n    ESCREVA(\"Acesso liberado\")\nSENAO\n    ESCREVA(\"Acesso negado\")\nFIMSE",
+        answerOptions: [
+            { text: "Acesso negado", isCorrect: false },
+            { text: "Erro na execução", isCorrect: false },
+            { text: "Acesso liberado", isCorrect: true },
+            { text: "Nenhuma saída", isCorrect: false }
+        ],
+        rationale: "A condição usa o operador `OU` (OR). A primeira parte (`idade >= 18`) é falsa (17 não é >= 18), mas a segunda parte (`tem_autorizacao`) é verdadeira. Como o `OU` precisa que apenas uma das condições seja verdadeira, `pode_entrar` será verdadeiro."
+    },
+    {
+        questionNumber: 65,
+        question: "Qual será o resultado retornado pela função em Python ao ser testada com a palavra \"radar\"?",
+        code: "def eh_palindromo(palavra):\n    if len(palavra) <= 1:\n        return True\n    if palavra[0] != palavra[-1]:\n        return False\n    return eh_palindromo(palavra[1:-1])",
+        answerOptions: [
+            { text: "False", isCorrect: false },
+            { text: "True", isCorrect: true },
+            { text: "Erro de execução", isCorrect: false },
+            { text: "None", isCorrect: false }
+        ],
+        rationale: "A função aplica recursão, comparando as letras das pontas e chamando a si mesma com a parte interna da palavra. `radar` -> `ada` -> `d` -> `True`."
+    },
+    {
+        questionNumber: 66,
+        question: "Um sistema de login armazena os nomes de usuários em um vetor ordenado. Ao digitar o nome, o sistema utiliza busca binária para localizar o usuário e validar o acesso. Qual condição é necessária para que a busca binária funcione corretamente?",
+        answerOptions: [
+            { text: "O vetor pode estar em qualquer ordem.", isCorrect: false },
+            { text: "Os dados devem estar organizados em uma árvore binária.", isCorrect: false },
+            { text: "O vetor precisa estar previamente ordenado.", isCorrect: true },
+            { text: "A busca deve iniciar sempre pelo primeiro elemento.", isCorrect: false }
+        ],
+        rationale: "A busca binária só funciona corretamente quando os dados estão previamente ordenados, pois ela se baseia em dividir o conjunto de busca pela metade a cada passo."
+    },
+    {
+        questionNumber: 67,
+        question: "Analise o trecho de pseudocódigo abaixo e determine o valor final da variável `z`.",
+        code: "x <- 5\ny <- 2\nz <- x * y + 3",
+        answerOptions: [
+            { text: "10", isCorrect: false },
+            { text: "8", isCorrect: false },
+            { text: "13", isCorrect: true },
+            { text: "7", isCorrect: false }
+        ],
+        rationale: "A operação segue a precedência aritmética: a multiplicação `x * y` (5 * 2 = 10) é feita primeiro, e depois a soma `10 + 3 = 13`."
+    },
+    {
+        questionNumber: 68,
+        question: "Em um sistema web de biblioteca, os livros cadastrados são ordenados pelo título em ordem alfabética para facilitar a busca. A técnica utilizada pelo desenvolvedor foi o algoritmo de Bubble Sort. Qual das alternativas abaixo descreve corretamente uma característica desse algoritmo?",
+        answerOptions: [
+            { text: "Ele é o mais eficiente para grandes volumes de dados.", isCorrect: false },
+            { text: "Ele compara pares de elementos adjacentes e os troca de posição quando necessário.", isCorrect: true },
+            { text: "Ele organiza os dados usando uma estrutura de árvore.", isCorrect: false },
+            { text: "Ele utiliza recursão para dividir o problema em sublistas.", isCorrect: false }
+        ],
+        rationale: "O Bubble Sort percorre a lista várias vezes, comparando elementos adjacentes e trocando-os de lugar se estiverem na ordem errada, fazendo com que os maiores (ou menores) elementos 'borbulhem' para o final (ou início) da lista."
+    },
+    {
+        questionNumber: 69,
+        question: "Um sistema de suporte técnico utiliza uma fila (queue) para organizar os chamados dos usuários. Qual das opções abaixo representa corretamente a lógica da estrutura de fila?",
+        answerOptions: [
+            { text: "O último chamado a entrar é o primeiro a ser atendido.", isCorrect: false },
+            { text: "Os chamados são organizados por ordem alfabética.", isCorrect: false },
+            { text: "O primeiro chamado a entrar é o primeiro a ser atendido.", isCorrect: true },
+            { text: "Os chamados com prioridade são atendidos antes, independente da ordem.", isCorrect: false }
+        ],
+        rationale: "A estrutura de fila segue a lógica FIFO (First-In, First-Out), ou seja, o primeiro a entrar é o primeiro a sair."
+    },
+    {
+        questionNumber: 70,
+        question: "Em um sistema de cadastro de clientes, foi criada uma regra em pseudocódigo. Qual das alternativas abaixo descreve corretamente o comportamento da condição?",
+        code: "SE idade > 18 E aceitou_termos = verdadeiro ENTAO\n    ValidarCliente()\nFIMSE",
+        answerOptions: [
+            { text: "O cliente será validado apenas se tiver mais de 18 anos, independentemente de aceitar os termos.", isCorrect: false },
+            { text: "O cliente será validado se tiver mais de 18 anos ou aceitar os termos.", isCorrect: false },
+            { text: "O cliente será validado apenas se ambas as condições forem verdadeiras.", isCorrect: true },
+            { text: "O cliente será validado se tiver exatamente 18 anos.", isCorrect: false }
+        ],
+        rationale: "A expressão lógica utiliza o operador `E` (AND), exigindo que ambas as condições (idade ser maior que 18 e ter aceitado os termos) sejam verdadeiras para que o bloco `SE` seja executado."
+    },
+    {
+        questionNumber: 71,
+        question: "Durante uma reunião de projeto, um técnico sugere o uso de sensores para medir grandezas físicas como tensão, corrente, temperatura e luminosidade. Em relação à natureza das grandezas físicas monitoradas, podemos dizer que:",
+        answerOptions: [
+            { text: "Todas são grandezas exclusivamente elétricas.", isCorrect: false },
+            { text: "Corrente e temperatura são grandezas equivalentes na eletrônica digital.", isCorrect: false },
+            { text: "Tensão e corrente são grandezas elétricas; temperatura e luminosidade são grandezas físicas convertidas por sensores.", isCorrect: true },
+            { text: "Temperatura e luminosidade são medidas diretamente em forma digital.", isCorrect: false }
+        ],
+        rationale: "Tensão e corrente são inerentemente elétricas. Sensores são transdutores que convertem outras formas de energia ou grandezas físicas (como calor ou luz) em sinais elétricos."
+    },
+    {
+        questionNumber: 72,
+        question: "Uma empresa desenvolve um sistema de tomada inteligente que só libera energia se dois sensores estiverem ativados simultaneamente: presença de pessoa e nível adequado de luminosidade. Para esse tipo de lógica, qual porta lógica digital representa corretamente esse comportamento?",
+        answerOptions: [
+            { text: "OR", isCorrect: false },
+            { text: "XOR", isCorrect: false },
+            { text: "AND", isCorrect: true },
+            { text: "NOT", isCorrect: false }
+        ],
+        rationale: "A porta AND (E) exige que ambas as condições (entradas) sejam verdadeiras para liberar a saída, correspondendo à lógica 'presença E luminosidade'."
+    },
+    {
+        questionNumber: 73,
+        question: "Durante o desenvolvimento de um sistema de automação residencial, um aluno programou um microcontrolador para acionar um relé digital quando a leitura de temperatura for superior a 28°C. O sinal enviado do microcontrolador para o módulo do relé é:",
+        answerOptions: [
+            { text: "Um sinal analógico com tensão variável entre 0 e 5V", isCorrect: false },
+            { text: "Um sinal digital, que alterna entre nível alto (5V) e baixo (0V)", isCorrect: true },
+            { text: "Um sinal de corrente contínua alternando polaridade", isCorrect: false },
+            { text: "Um sinal digital com modulação de amplitude", isCorrect: false }
+        ],
+        rationale: "Módulos de relé digital são projetados para serem acionados por sinais digitais de um microcontrolador, onde um nível lógico baixo (0V) representa um estado (ex: desligado) e um nível lógico alto (ex: 5V ou 3.3V) representa outro (ex: ligado)."
+    },
+    {
+        questionNumber: 74,
+        question: "Um desenvolvedor está montando um protótipo de sistema IoT com um LED que será acionado para indicar falha de sensor. O LED opera com 2V e 20mA, e a alimentação disponível é de 5V. Qual o valor mais apropriado para o resistor que deve ser colocado em série com o LED?",
+        answerOptions: [
+            { text: "150 ohms", isCorrect: true },
+            { text: "100 ohms", isCorrect: false },
+            { text: "50 ohms", isCorrect: false },
+            { text: "10 ohms", isCorrect: false }
+        ],
+        rationale: "Usando a Lei de Ohm (R = V/I): a tensão sobre o resistor será a tensão da fonte menos a tensão do LED (5V - 2V = 3V). A corrente é de 20mA (0,02A). Portanto, R = 3V / 0,02A = 150 ohms."
+    },
+    {
+        questionNumber: 75,
+        question: "A equipe técnica da empresa AgroTech está desenvolvendo um sistema IoT para monitorar a umidade do solo em plantações. Um sensor de umidade analógico é utilizado, e sua saída varia entre 0V (solo seco) e 5V (solo muito úmido). O microcontrolador que será utilizado opera com leitura analógica de 10 bits (0 a 1023). Se o sensor indicar uma tensão de 2,5V, qual será aproximadamente o valor lido pelo microcontrolador?",
+        answerOptions: [
+            { text: "256", isCorrect: false },
+            { text: "512", isCorrect: true },
+            { text: "768", isCorrect: false },
+            { text: "1023", isCorrect: false }
+        ],
+        rationale: "Um conversor analógico-digital de 10 bits mapeia a faixa de tensão de entrada (0-5V) para uma faixa de valores digitais (0-1023). Uma tensão de 2,5V está exatamente na metade da faixa de tensão, então o valor digital correspondente será aproximadamente a metade da faixa digital (1024 / 2 = 512)."
+    },
+    {
+        questionNumber: 76,
+        question: "Uma empresa de pequeno porte contratou um técnico para realizar a manutenção de seu sistema de controle de estoque, originalmente desenvolvido por outro profissional. Durante a análise inicial, o técnico percebeu a ausência de qualquer documentação do sistema, dificultando a compreensão da lógica do código e a identificação de erros. Qual boa prática teria evitado essa situação?",
+        answerOptions: [
+            { text: "Atualização semanal do sistema.", isCorrect: false },
+            { text: "Utilização de software de escritório para anotações internas.", isCorrect: false },
+            { text: "Documentação técnica completa e atualizada durante o desenvolvimento.", isCorrect: true },
+            { text: "Manutenção somente após erros críticos ocorrerem.", isCorrect: false }
+        ],
+        rationale: "A documentação técnica (incluindo arquitetura, comentários no código, manuais, etc.) é essencial para facilitar futuras manutenções e garantir a continuidade do trabalho por outros profissionais."
+    },
+    {
+        questionNumber: 77,
+        question: "Durante a implantação de um novo sistema de vendas online, o servidor principal da empresa sofreu uma falha elétrica e ficou indisponível por 6 horas. A equipe técnica conseguiu restabelecer o sistema por meio de uma réplica em nuvem, evitando prejuízos nas operações. Esse procedimento é um exemplo de qual prática de implantação?",
+        answerOptions: [
+            { text: "Suporte ao usuário final.", isCorrect: false },
+            { text: "Monitoramento de desempenho.", isCorrect: false },
+            { text: "Plano de contingência.", isCorrect: true },
+            { text: "Backup manual de dados.", isCorrect: false }
+        ],
+        rationale: "Um plano de contingência (ou plano de recuperação de desastres) define os procedimentos a serem seguidos para garantir a continuidade operacional mesmo diante de falhas ou incidentes, como a ativação de um ambiente de backup."
+    },
+    {
+        questionNumber: 78,
+        question: "Um analista está implantando um sistema de controle de projetos em uma empresa de engenharia. Para facilitar a análise de desempenho e o compartilhamento de dados com o setor financeiro, será necessário exportar relatórios do sistema para planilhas com cálculos automatizados e gráficos. Qual software de escritório será mais adequado para esse tipo de integração?",
+        answerOptions: [
+            { text: "Microsoft PowerPoint.", isCorrect: false },
+            { text: "Microsoft Word.", isCorrect: false },
+            { text: "Microsoft Excel.", isCorrect: true },
+            { text: "Microsoft Outlook.", isCorrect: false }
+        ],
+        rationale: "O Excel é a ferramenta ideal para manipulação de dados em planilhas, criação de gráficos, aplicação de fórmulas e integração com outros sistemas por meio da importação de arquivos (como CSV)."
+    },
+    {
+        questionNumber: 79,
+        question: "Durante a utilização do sistema financeiro da empresa JRM Serviços, um usuário relatou que, ao gerar relatórios de despesas, o sistema trava ao selecionar um determinado período. A equipe de desenvolvimento identificou que o erro se deve a uma falha de código que não trata valores nulos vindos do banco de dados. Qual tipo de manutenção deve ser aplicada nesse caso?",
+        answerOptions: [
+            { text: "Manutenção preventiva, pois o erro ainda não impactou todos os usuários.", isCorrect: false },
+            { text: "Manutenção evolutiva, pois é necessário melhorar a usabilidade do sistema.", isCorrect: false },
+            { text: "Manutenção adaptativa, pois o sistema precisa se adaptar ao ambiente.", isCorrect: false },
+            { text: "Manutenção corretiva, pois há um defeito identificado que precisa ser corrigido.", isCorrect: true }
+        ],
+        rationale: "O erro identificado é um defeito (bug) no sistema que precisa ser corrigido, o que caracteriza a manutenção corretiva."
+    },
+    {
+        questionNumber: 80,
+        question: "A empresa Logitec Solutions está finalizando o desenvolvimento de um novo sistema interno para controle de logística e estoque. O gerente de TI solicitou à equipe técnica que elaborasse um plano de implantação que minimizasse os impactos operacionais. Dentre as abordagens a seguir, qual é a mais indicada para implantar o sistema com maior segurança e controle sobre possíveis falhas, especialmente em ambientes críticos?",
+        answerOptions: [
+            { text: "Substituir imediatamente o sistema antigo pelo novo, realizando a implantação completa em um único dia útil.", isCorrect: false },
+            { text: "Implantar o novo sistema gradualmente, em paralelo com o antigo, permitindo testes e ajustes antes da substituição total.", isCorrect: true },
+            { text: "Implantar o novo sistema diretamente em produção, sem testes prévios, para evitar retrabalho.", isCorrect: false },
+            { text: "Manter o sistema antigo indefinidamente e apenas treinar os usuários no novo, sem implantá-lo de fato.", isCorrect: false }
+        ],
+        rationale: "A abordagem paralela ou a implantação em fases permite que o novo sistema seja testado em um ambiente real enquanto o sistema antigo ainda funciona como backup, garantindo segurança e controle e minimizando os riscos."
+    }
+];
+
+        const startScreen = document.getElementById('start-screen');
+        const quizScreen = document.getElementById('quiz-screen');
+        const resultsScreen = document.getElementById('results-screen');
+        const adminDashboardScreen = document.getElementById('admin-dashboard-screen');
+        const adminHistoryScreen = document.getElementById('admin-history-screen');
+        const createQuizScreen = document.getElementById('create-quiz-screen');
+        const studentHistoryScreen = document.getElementById('student-history-screen');
+        const reviewScreen = document.getElementById('review-screen');
+        const passwordModal = document.getElementById('password-modal');
+
+
+        const startBtn = document.getElementById('start-btn');
+        const nextBtn = document.getElementById('next-btn');
+        const prevBtn = document.getElementById('prev-btn');
+        const finishBtn = document.getElementById('finish-btn');
+        const restartBtn = document.getElementById('restart-btn');
+        const studentHistoryBtn = document.getElementById('student-history-btn');
+        const adminAreaBtn = document.getElementById('admin-area-btn');
+
+        const backToStartBtnDashboard = document.getElementById('back-to-start-btn-dashboard');
+        const backToDashboardBtnAdmin = document.getElementById('back-to-dashboard-btn-admin');
+        const backToDashboardBtnCreate = document.getElementById('back-to-dashboard-btn-create');
+        const backToStartBtnStudent = document.getElementById('back-to-start-btn-student');
+        const backToStudentHistoryBtn = document.getElementById('back-to-student-history-btn');
+        const showHistoryViewBtn = document.getElementById('show-history-view-btn');
+        const showCreateQuizViewBtn = document.getElementById('show-create-quiz-view-btn');
+        
+        const cancelPasswordBtn = document.getElementById('cancel-password-btn');
+        const submitPasswordBtn = document.getElementById('submit-password-btn');
+        const adminPasswordInput = document.getElementById('admin-password');
+        const passwordError = document.getElementById('password-error');
+
+        const saveQuizBtn = document.getElementById('save-quiz-btn');
+        const quizNameInput = document.getElementById('quiz-name');
+        const quizQuestionCountInput = document.getElementById('quiz-question-count');
+        const createQuizStatus = document.getElementById('create-quiz-status');
+        
+        const studentNameInput = document.getElementById('student-name');
+        const studentEmailInput = document.getElementById('student-email');
+        
+        const questionNumberEl = document.getElementById('question-number');
+        const totalQuestionsEl = document.getElementById('total-questions');
+        const questionTextEl = document.getElementById('question-text');
+        const answerOptionsEl = document.getElementById('answer-options');
+        
+        const codeSnippetContainer = document.getElementById('code-snippet-container');
+        const codeSnippetEl = document.getElementById('code-snippet');
+
+        const scoreEl = document.getElementById('score');
+        const totalScoreQuestionsEl = document.getElementById('total-score-questions');
+        const scorePercentageEl = document.getElementById('score-percentage');
+        const answerSheet = document.getElementById('answer-sheet');
+        const answerSheetTitle = document.getElementById('answer-sheet-title');
+        const adminHistoryTableBody = document.getElementById('admin-history-table-body');
+        const studentHistoryList = document.getElementById('student-history-list');
+        const reviewQuestionsContainer = document.getElementById('review-questions-container');
+        const currentQuizInfo = document.getElementById('current-quiz-info');
+        const quizFilterSelect = document.getElementById('quiz-filter');
+
+
+        let currentQuestionIndex = 0;
+        let resultsChart = null;
+        let studentName = "";
+        let studentEmail = "";
+        let userAnswers = [];
+        let currentQuizData = [];
+        let currentQuizName = "Simulado Completo";
+        let adminFilterPopulated = false;
+
+        async function loadLatestQuiz() {
+            try {
+                if (!dbSimuladosCollection) {
+                    console.log("DB not ready, will try again.");
+                    setTimeout(loadLatestQuiz, 500);
+                    return;
+                }
+                const q = query(dbSimuladosCollection, orderBy("createdAt", "desc"), limit(1));
+                const querySnapshot = await getDocs(q);
+                if (!querySnapshot.empty) {
+                    const latestQuiz = querySnapshot.docs[0].data();
+                    currentQuizName = latestQuiz.name;
+                     currentQuizData = latestQuiz.questionIndices.map(index => {
+                        return fullQuizData[index];
+                    });
+                     currentQuizInfo.textContent = `Simulado atual: "${currentQuizName}" (${currentQuizData.length} questões).`;
+                } else {
+                    currentQuizData = fullQuizData;
+                    currentQuizInfo.textContent = `Simulado atual: "${currentQuizName}" (${currentQuizData.length} questões).`;
+                }
+            } catch (e) {
+                console.error("Error loading latest quiz:", e);
+                currentQuizData = fullQuizData;
+                currentQuizInfo.textContent = "Não foi possível carregar simulado. Usando o simulado completo (80 questões)."
+            }
+        }
+
+
+        function validateInputs() {
+            const name = studentNameInput.value.trim();
+            const email = studentEmailInput.value.trim();
+            const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+
+            if (name !== "" && isEmailValid) {
+                startBtn.disabled = false;
+                startBtn.classList.remove('btn-disabled');
+            } else {
+                startBtn.disabled = true;
+                startBtn.classList.add('btn-disabled');
+            }
+             if (email !== "" && isEmailValid) {
+                studentHistoryBtn.disabled = false;
+                studentHistoryBtn.classList.remove('btn-disabled');
+            } else {
+                 studentHistoryBtn.disabled = true;
+                 studentHistoryBtn.classList.add('btn-disabled');
+            }
+        }
+
+        startBtn.addEventListener('click', startQuiz);
+        nextBtn.addEventListener('click', () => {
+            if (currentQuestionIndex < currentQuizData.length - 1) {
+                jumpToQuestion(currentQuestionIndex + 1);
+            }
+        });
+        prevBtn.addEventListener('click', () => {
+            if (currentQuestionIndex > 0) {
+                jumpToQuestion(currentQuestionIndex - 1);
+            }
+        });
+        finishBtn.addEventListener('click', calculateAndShowResults);
+        restartBtn.addEventListener('click', restartQuiz);
+        studentHistoryBtn.addEventListener('click', showStudentHistory);
+        
+        adminAreaBtn.addEventListener('click', () => {
+             passwordModal.classList.remove('hidden');
+             adminPasswordInput.value = '';
+             passwordError.classList.add('hidden');
+             adminPasswordInput.focus();
+        });
+        cancelPasswordBtn.addEventListener('click', () => passwordModal.classList.add('hidden'));
+        submitPasswordBtn.addEventListener('click', checkAdminPassword);
+        
+        showHistoryViewBtn.addEventListener('click', () => {
+             adminDashboardScreen.classList.add('hidden');
+             showAdminHistory(true);
+        });
+
+        showCreateQuizViewBtn.addEventListener('click', () => {
+            adminDashboardScreen.classList.add('hidden');
+            createQuizScreen.classList.remove('hidden');
+        });
+        
+        quizFilterSelect.addEventListener('change', () => showAdminHistory(true));
+
+        backToStartBtnDashboard.addEventListener('click', restartQuiz);
+        backToDashboardBtnAdmin.addEventListener('click', showAdminDashboard);
+        backToDashboardBtnCreate.addEventListener('click', showAdminDashboard);
+
+        backToStartBtnStudent.addEventListener('click', restartQuiz);
+        backToStudentHistoryBtn.addEventListener('click', () => {
+            reviewScreen.classList.add('hidden');
+            showStudentHistory();
+        });
+        
+        saveQuizBtn.addEventListener('click', saveNewQuiz);
+
+        studentNameInput.addEventListener('input', validateInputs);
+        studentEmailInput.addEventListener('input', validateInputs);
+        
+        function showAdminDashboard() {
+            adminHistoryScreen.classList.add('hidden');
+            createQuizScreen.classList.add('hidden');
+            adminDashboardScreen.classList.remove('hidden');
+        }
+
+        async function checkAdminPassword() {
+            const enteredPassword = adminPasswordInput.value;
+            if (!enteredPassword) return;
+
+            try {
+                const docRef = doc(dbConfigCollection, "admin");
+                const docTest = doc(dbConfigCollection, "data");
+                const docSnap = await getDoc(docRef);
+
+                if (docSnap.exists() && docSnap.data().password === enteredPassword) {
+                    passwordModal.classList.add('hidden');
+                    startScreen.classList.add('hidden');
+                    showAdminDashboard();
+                } else {
+                    passwordError.classList.remove('hidden');
+                }
+            } catch (error) {
+                console.error("Error checking password:", error);
+                passwordError.textContent = "Erro ao verificar a senha.";
+                passwordError.classList.remove('hidden');
+            }
+        }
+        
+        async function saveNewQuiz() {
+            const name = quizNameInput.value.trim();
+            const count = parseInt(quizQuestionCountInput.value, 10);
+
+            if (!name || !count || count < 1 || count > fullQuizData.length) {
+                createQuizStatus.textContent = "Por favor, preencha o nome e um número de questões válido (1-80).";
+                createQuizStatus.classList.add('text-red-500');
+                return;
+            }
+            
+            saveQuizBtn.disabled = true;
+            saveQuizBtn.classList.add('btn-disabled');
+            createQuizStatus.textContent = "Salvando...";
+            createQuizStatus.classList.remove('text-red-500', 'text-green-500');
+
+
+            const allIndices = Array.from({ length: fullQuizData.length }, (_, i) => i);
+            
+            for (let i = allIndices.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [allIndices[i], allIndices[j]] = [allIndices[j], allIndices[i]];
+            }
+            
+            const selectedIndices = allIndices.slice(0, count);
+
+            const newQuiz = {
+                name: name,
+                questionCount: count,
+                questionIndices: selectedIndices,
+                createdAt: new Date()
+            };
+
+            try {
+                await addDoc(dbSimuladosCollection, newQuiz);
+                createQuizStatus.textContent = `Simulado "${name}" criado e ativado com sucesso!`;
+                createQuizStatus.classList.add('text-green-500');
+                quizNameInput.value = '';
+                quizQuestionCountInput.value = '';
+                await loadLatestQuiz();
+            } catch(e) {
+                console.error("Error saving quiz:", e);
+                createQuizStatus.textContent = "Erro ao salvar o simulado.";
+                createQuizStatus.classList.add('text-red-500');
+            } finally {
+                saveQuizBtn.disabled = false;
+                saveQuizBtn.classList.remove('btn-disabled');
+            }
+        }
+
+
+        function startQuiz() {
+            studentName = studentNameInput.value.trim();
+            studentEmail = studentEmailInput.value.trim().toLowerCase();
+            
+            startScreen.classList.add('hidden');
+            quizScreen.classList.remove('hidden');
+            
+            userAnswers = new Array(currentQuizData.length).fill(null);
+            currentQuestionIndex = 0;
+            
+            totalQuestionsEl.textContent = currentQuizData.length;
+            totalScoreQuestionsEl.textContent = currentQuizData.length;
+            answerSheetTitle.textContent = currentQuizName;
+            
+            generateAnswerSheet();
+            jumpToQuestion(0);
+        }
+        
+        function generateAnswerSheet() {
+            answerSheet.innerHTML = '';
+            for (let i = 0; i < currentQuizData.length; i++) {
+                const button = document.createElement('button');
+                button.textContent = i + 1;
+                button.classList.add('answer-sheet-btn', 'w-10', 'h-10', 'rounded', 'font-semibold', 'transition-all');
+                button.dataset.index = i;
+                button.addEventListener('click', () => jumpToQuestion(i));
+                answerSheet.appendChild(button);
+            }
+        }
+        
+        function jumpToQuestion(index) {
+            currentQuestionIndex = index;
+            showQuestion();
+        }
+
+        function showQuestion() {
+            const question = currentQuizData[currentQuestionIndex];
+            questionNumberEl.textContent = currentQuestionIndex + 1;
+            questionTextEl.textContent = question.question;
+
+            answerOptionsEl.innerHTML = '';
+            
+            if (question.code) {
+                codeSnippetContainer.classList.remove('hidden');
+                codeSnippetEl.textContent = question.code;
+            } else {
+                codeSnippetContainer.classList.add('hidden');
+            }
+
+            question.answerOptions.forEach((option, index) => {
+                const button = document.createElement('button');
+                button.innerHTML = `<div class="flex items-center">
+                                        <input type="radio" id="option${index}" name="answer" value="${index}" class="w-4 h-4 text-indigo-600 bg-gray-100 border-gray-300 focus:ring-indigo-500">
+                                        <label for="option${index}" class="ml-3 block text-md font-medium text-gray-700">${option.text}</label>
+                                    </div>`;
+                button.classList.add('option-btn', 'w-full', 'text-left', 'p-4', 'rounded-lg');
+                button.dataset.correct = option.isCorrect;
+                button.dataset.index = index;
+
+                const radio = button.querySelector('input');
+                if (userAnswers[currentQuestionIndex] === index) {
+                    radio.checked = true;
+                }
+                
+                radio.addEventListener('change', () => selectAnswer(index));
+                
+                answerOptionsEl.appendChild(button);
+            });
+            
+            updateAnswerSheet();
+        }
+        
+        function updateAnswerSheet() {
+            const buttons = answerSheet.querySelectorAll('.answer-sheet-btn');
+            buttons.forEach((btn, index) => {
+                btn.classList.remove('current');
+                if (index === currentQuestionIndex) {
+                    btn.classList.add('current');
+                }
+            });
+        }
+
+        function selectAnswer(selectedIndex) {
+            userAnswers[currentQuestionIndex] = selectedIndex;
+            
+            const sheetBtn = answerSheet.querySelector(`[data-index='${currentQuestionIndex}']`);
+            sheetBtn.classList.add('answered');
+            
+            checkCompletion();
+        }
+        
+        function checkCompletion() {
+            const allAnswered = userAnswers.every(answer => answer !== null);
+            if (allAnswered) {
+                finishBtn.disabled = false;
+                finishBtn.classList.remove('btn-disabled');
+            }
+        }
+
+        async function calculateAndShowResults() {
+            let score = 0;
+            let wronglyAnsweredQuestions = [];
+
+            userAnswers.forEach((answerIndex, questionIndex) => {
+                const question = currentQuizData[questionIndex];
+                const correctOptionIndex = question.answerOptions.findIndex(opt => opt.isCorrect);
+                if (answerIndex === correctOptionIndex) {
+                    score++;
+                } else {
+                    wronglyAnsweredQuestions.push({
+                        questionNumber: question.questionNumber,
+                        question: question.question,
+                        code: question.code || null,
+                        rationale: question.rationale
+                    });
+                }
+            });
+
+            quizScreen.classList.add('hidden');
+            resultsScreen.classList.remove('hidden');
+
+            const totalQuestions = currentQuizData.length;
+            const errors = totalQuestions - score;
+            const percentage = Math.round((score / totalQuestions) * 100);
+
+            scoreEl.textContent = score;
+            scorePercentageEl.textContent = `${percentage}% de acerto`;
+
+            const resultData = {
+                studentName: studentName,
+                studentEmail: studentEmail,
+                quizName: currentQuizName,
+                correctAnswers: score,
+                totalQuestions: totalQuestions,
+                wrongAnswersCount: errors,
+                percentage: percentage,
+                timestamp: new Date(),
+                wrongQuestions: wronglyAnsweredQuestions
+            };
+
+            try {
+                if (dbResultsCollection) {
+                    await addDoc(dbResultsCollection, resultData);
+                } else {
+                    console.error("Firestore collection not initialized.");
+                }
+            } catch (error) {
+                console.error("Error adding document: ", error);
+            }
+
+            const ctx = document.getElementById('results-chart').getContext('2d');
+            
+            if(resultsChart) {
+                resultsChart.destroy();
+            }
+
+            resultsChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Acertos', 'Erros'],
+                    datasets: [{
+                        label: 'Resultado do Simulado',
+                        data: [score, errors],
+                        backgroundColor: ['#4f46e5', '#d1d5db'],
+                        borderColor: ['#ffffff', '#ffffff'],
+                        borderWidth: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '70%',
+                    plugins: { legend: { position: 'bottom', labels: { font: { size: 14, weight: '500' } } } }
+                }
+            });
+        }
+        
+        function restartQuiz() {
+            studentNameInput.value = "";
+            studentEmailInput.value = "";
+            startBtn.disabled = true;
+            startBtn.classList.add('btn-disabled');
+            studentHistoryBtn.disabled = true;
+            studentHistoryBtn.classList.add('btn-disabled');
+
+            startScreen.classList.remove('hidden');
+            quizScreen.classList.add('hidden');
+            resultsScreen.classList.add('hidden');
+            adminDashboardScreen.classList.add('hidden');
+            adminHistoryScreen.classList.add('hidden');
+            createQuizScreen.classList.add('hidden');
+            studentHistoryScreen.classList.add('hidden');
+            reviewScreen.classList.add('hidden');
+        }
+        
+        async function populateQuizFilter() {
+            if (adminFilterPopulated) return;
+            try {
+                const querySnapshot = await getDocs(query(dbSimuladosCollection, orderBy("createdAt", "desc")));
+                const quizNames = new Set();
+                querySnapshot.forEach(doc => {
+                    quizNames.add(doc.data().name);
+                });
+
+                quizFilterSelect.innerHTML = '<option value="all">Todos os Simulados</option>';
+                quizNames.forEach(name => {
+                    const option = document.createElement('option');
+                    option.value = name;
+                    option.textContent = name;
+                    quizFilterSelect.appendChild(option);
+                });
+                adminFilterPopulated = true;
+            } catch (error) {
+                console.error("Error populating quiz filter:", error);
+            }
+        }
+
+
+        async function showAdminHistory(fromDashboard = false) {
+             if (!fromDashboard) {
+                startScreen.classList.add('hidden');
+             }
+            adminHistoryScreen.classList.remove('hidden');
+            adminHistoryTableBody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-gray-500">Carregando histórico...</td></tr>';
+
+            await populateQuizFilter();
+            const selectedQuiz = quizFilterSelect.value;
+
+            try {
+                 if (!dbResultsCollection) {
+                    adminHistoryTableBody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-red-500">Não foi possível conectar ao banco de dados.</td></tr>';
+                    return;
+                }
+
+                let q;
+                if (selectedQuiz === "all") {
+                    q = query(dbResultsCollection, orderBy("timestamp", "desc"));
+                } else {
+                    q = query(dbResultsCollection, where("quizName", "==", selectedQuiz), orderBy("timestamp", "desc"));
+                }
+
+                const querySnapshot = await getDocs(q);
+                const results = [];
+                querySnapshot.forEach((doc) => {
+                    results.push(doc.data());
+                });
+
+                adminHistoryTableBody.innerHTML = ''; 
+
+                if (results.length === 0) {
+                    adminHistoryTableBody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-gray-500">Nenhum resultado encontrado para este filtro.</td></tr>';
+                    return;
+                }
+                
+                results.forEach(result => {
+                    const row = document.createElement('tr');
+                    const formattedDate = result.timestamp.toDate().toLocaleString('pt-BR');
+                    row.innerHTML = `
+                        <td class="py-4 px-4 text-sm font-medium text-gray-900">${result.studentName}</td>
+                        <td class="py-4 px-4 text-sm text-gray-500">${result.studentEmail}</td>
+                        <td class="py-4 px-4 text-sm text-gray-500">${result.quizName || 'Simulado Completo'}</td>
+                        <td class="py-4 px-4 text-sm text-gray-500">${result.correctAnswers}/${result.totalQuestions || 80}</td>
+                        <td class="py-4 px-4 text-sm text-gray-500">${result.percentage}%</td>
+                        <td class="py-4 px-4 text-sm text-gray-500">${formattedDate}</td>
+                    `;
+                    adminHistoryTableBody.appendChild(row);
+                });
+            } catch (error) {
+                console.error("Error fetching history: ", error);
+                adminHistoryTableBody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-red-500">Erro ao carregar o histórico.</td></tr>';
+            }
+        }
+
+        async function showStudentHistory() {
+            const email = studentEmailInput.value.trim().toLowerCase();
+            startScreen.classList.add('hidden');
+            studentHistoryScreen.classList.remove('hidden');
+            studentHistoryList.innerHTML = `<p class="text-center text-gray-500">Carregando seu histórico...</p>`;
+
+            try {
+                if (!dbResultsCollection) {
+                    studentHistoryList.innerHTML = `<p class="text-center text-red-500">Não foi possível conectar ao banco de dados.</p>`;
+                    return;
+                }
+
+                const q = query(dbResultsCollection, where("studentEmail", "==", email), orderBy("timestamp", "desc"));
+                const querySnapshot = await getDocs(q);
+                const results = [];
+                querySnapshot.forEach((doc) => {
+                    results.push({ id: doc.id, ...doc.data() });
+                });
+                
+                studentHistoryList.innerHTML = '';
+
+                if (results.length === 0) {
+                    studentHistoryList.innerHTML = `<p class="text-center text-gray-500">Nenhum resultado encontrado para este e-mail.</p>`;
+                    return;
+                }
+                
+                results.forEach(result => {
+                    const resultCard = document.createElement('div');
+                    resultCard.className = 'border rounded-lg p-4 flex justify-between items-center';
+                    const formattedDate = result.timestamp.toDate().toLocaleString('pt-BR');
+                    resultCard.innerHTML = `
+                        <div>
+                            <p class="font-bold text-lg">${result.quizName || 'Simulado Completo'}</p>
+                            <p class="text-sm text-gray-500">${formattedDate}</p>
+                            <p class="text-gray-600 mt-1">Acertos: ${result.correctAnswers}/${result.totalQuestions || 80} (${result.percentage}%)</p>
+                        </div>
+                        <button data-id="${result.id}" class="review-btn bg-indigo-100 text-indigo-700 font-semibold py-2 px-4 rounded-lg hover:bg-indigo-200">
+                            Revisar Erros
+                        </button>
+                    `;
+                    studentHistoryList.appendChild(resultCard);
+                });
+
+                document.querySelectorAll('.review-btn').forEach(button => {
+                    button.addEventListener('click', (e) => {
+                        showReview(e.target.dataset.id);
+                    });
+                });
+
+            } catch (error) {
+                console.error("Error fetching student history:", error);
+                studentHistoryList.innerHTML = `<p class="text-center text-red-500">Erro ao carregar o histórico.</p>`;
+            }
+        }
+
+        async function showReview(resultId) {
+            studentHistoryScreen.classList.add('hidden');
+            reviewScreen.classList.remove('hidden');
+            reviewQuestionsContainer.innerHTML = `<p class="text-center text-gray-500">Carregando revisão...</p>`;
+            
+            try {
+                const docRef = doc(db, `artifacts/${appId}/public/data/resultados`, resultId);
+                const docSnap = await getDoc(docRef);
+
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    reviewQuestionsContainer.innerHTML = '';
+
+                    if (!data.wrongQuestions || data.wrongQuestions.length === 0) {
+                        reviewQuestionsContainer.innerHTML = `<div class="bg-green-100 border-l-4 border-green-500 text-green-700 p-4 rounded-md" role="alert">
+                            <p class="font-bold">Parabéns!</p>
+                            <p>Você não errou nenhuma questão neste simulado.</p>
+                        </div>`;
+                        return;
+                    }
+
+                    data.wrongQuestions.forEach(q => {
+                        const questionEl = document.createElement('div');
+                        questionEl.className = 'border-b pb-4';
+                        let codeBlock = '';
+                        if (q.code) {
+                            codeBlock = `<pre class="bg-gray-800 text-white p-3 rounded-md overflow-x-auto mt-2"><code class="text-sm">${q.code}</code></pre>`;
+                        }
+                        questionEl.innerHTML = `
+                            <p class="font-bold text-gray-800">Questão ${q.questionNumber}: ${q.question}</p>
+                            ${codeBlock}
+                            <div class="mt-2 p-3 rounded-md rationale">
+                                <p class="font-semibold">Resposta Correta:</p>
+                                <p>${q.rationale}</p>
+                            </div>
+                        `;
+                        reviewQuestionsContainer.appendChild(questionEl);
+                    });
+                } else {
+                    reviewQuestionsContainer.innerHTML = `<p class="text-center text-red-500">Não foi possível encontrar os detalhes deste resultado.</p>`;
+                }
+
+            } catch(error) {
+                console.error("Error showing review:", error);
+                reviewQuestionsContainer.innerHTML = `<p class="text-center text-red-500">Erro ao carregar a revisão.</p>`;
+            }
+        }
+
+    </script>
+</body>
+</html>
