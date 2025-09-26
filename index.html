@@ -123,6 +123,9 @@
                     <div id="code-snippet-container" class="mb-6 hidden">
                         <pre class="bg-gray-800 text-white p-4 rounded-md overflow-x-auto"><code id="code-snippet"></code></pre>
                     </div>
+                    <div id="image-container" class="mb-6 hidden text-center">
+                        <img id="question-image" src="" alt="Imagem da questão" class="mx-auto rounded-md shadow-sm max-h-64" />
+                    </div>
                     <div id="answer-options" class="space-y-4"></div>
                     <div class="mt-8 flex justify-between items-center">
                         <button id="prev-btn" class="bg-gray-200 text-gray-700 font-bold py-2 px-6 rounded-lg hover:bg-gray-300 transition-colors">&larr; Anterior</button>
@@ -174,6 +177,11 @@
                 <div class="flex items-center gap-4">
                     <select id="quiz-filter" class="border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500">
                         <option value="all">Todos os Simulados</option>
+                    </select>
+                    <select id="admin-sort" class="border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        <option value="timestamp_desc">Data (mais recente)</option>
+                        <option value="percentage_desc">Percentual (maior primeiro)</option>
+                        <option value="percentage_asc">Percentual (menor primeiro)</option>
                     </select>
                     <button id="back-to-dashboard-btn-admin" class="bg-gray-200 text-gray-700 font-bold py-2 px-6 rounded-lg hover:bg-gray-300 transition-colors">
                         &larr; Painel
@@ -286,13 +294,19 @@
         let dbSimuladosCollection;
         let dbConfigCollection;
         
-        onAuthStateChanged(auth, (user) => {
+        onAuthStateChanged(auth, async (user) => {
             if (user) {
                 userId = user.uid;
                 dbResultsCollection = collection(db, `artifacts/${appId}/public/data/resultados`);
                 dbSimuladosCollection = collection(db, `artifacts/${appId}/public/data/simulados`);
                 dbConfigCollection = collection(db, `artifacts/${appId}/public/data/config`);
-                loadLatestQuiz();
+                await loadLatestQuiz();
+                // try to import the compact quiz with images if it wasn't already imported
+                try {
+                    await importCompactQuizIfMissing();
+                } catch (e) {
+                    console.error('Import quiz error:', e);
+                }
             } else {
                 signInAnonymously(auth).catch(error => console.error("Anonymous sign-in failed:", error));
             }
@@ -1198,6 +1212,363 @@
     }
 ];
 
+        // --- Image URLs mapping (ids -> hosted URLs)
+        const imageUrls = {
+                "questao19": "./images/questao19.png",
+                "questao23": "./images/questao23.png",
+                "questao32": "./images/questao32.png",
+                "questao34": "./images/questao34.png",
+                "questao6": "./images/questao6.png",
+                "questao16": "./images/questao16.png",
+                "questao20": "./images/questao20.jpg",
+                "questao26": "./images/questao26.png",
+                "questao31": "./images/questao31.png",
+                "questao36": "./images/questao36.png",
+                "questao37": "./images/questao37.png",
+                "questao39": "https://i.imgur.com/gK52B7H.png"
+            };
+
+        // Imported quiz in the new compact format provided by the user.
+        const importedQuizCompact = [
+                {
+                    question: "Um estudante está aprendendo sobre linguagem de programação para integração IoT e realizou a montagem de um circuito no microcontrolador Arduino Uno para acender um led na cor verde. Na programação, utilizou a linguagem C++ para definir que, ao iniciar o led, acenda por dois segundos e, em seguida, fique desligado por 5 segundos. Assim, reinicia o processo (loop). Os comandos ausentes no código fonte são, respectivamente:",
+                    image: "questao19",
+                    options: [
+                        "INPUT, LOW, 2000, HIGH e 5000.",
+                        "INPUT, HIGH, 2000, LOW e 5000.",
+                        "OUTPUT, LOW, 2000, HIGH e 5000.",
+                        "OUTPUT, HIGH, 2000, LOW e 5000.",
+                        "OUTPUT, HIGH, 5000, LOW e 2000."
+                    ],
+                    answer: "OUTPUT, HIGH, 2000, LOW e 5000."
+                },
+                {
+                    question: "Uma equipe está desenvolvendo um novo software e o responsável pela elaboração do diagrama de classe criou a associação conforme imagem a seguir. Qual tipo de associação está presente nesse diagrama?",
+                    image: "questao23",
+                    options: [
+                        "Associação binária.",
+                        "Associação agregação.",
+                        "Associação ternária ou N-ária.",
+                        "Associação unária ou reflexiva.",
+                        "Associação generalização ou especialização."
+                    ],
+                    answer: "Associação generalização ou especialização."
+                },
+                {
+                    question: "Um programador IoT construiu um circuito com microcontrolador Arduino contendo um led conectado à porta digital 8, que terá seu estado mudado para HIGH ou LOW de acordo com o valor digitado pelo usuário no monitor serial. Caso o valor recebido seja igual a 1, o led deve ser ligado por 5 segundos e depois desligado. Para executar o circuito de acordo com o contexto, os comandos a ser inseridos no código fonte são, respectivamente:",
+                    image: "questao32",
+                    options: [
+                        "0, HIGH, LOW.",
+                        "1, HIGH, LOW.",
+                        "'1', LOW, HIGH.",
+                        "'1', HIGH, LOW.",
+                        "'0', LOW, HIGH."
+                    ],
+                    answer: "'1', HIGH, LOW."
+                },
+                {
+                    question: "Um estudante de desenvolvimento de sistemas precisa montar um circuito que será alimentado por 5 V para acender um led verde que precisa de 2.5 V e uma corrente de 20 mA. Ao montar o circuito, o estudante conectou um resistor para ajustar a voltagem. O valor do resistor resultante desse cálculo foi de:",
+                    image: "questao34",
+                    options: [
+                        "0,125 ohm.",
+                        "0,250 ohm.",
+                        "25 ohm.",
+                        "125 ohm.",
+                        "250 ohm."
+                    ],
+                    answer: "125 ohm."
+                },
+                {
+                    question: "Uma empresa deseja integrar diferentes sistemas de gestão em uma única plataforma para melhorar a eficiência. Este processo tem como propósito buscar a ferramenta com o melhor custo/benefício e que evite uma integração que perdure por um longo período. A ação a ser desenvolvida para seleção da ferramenta de integração para este caso é:",
+                    image: null,
+                    options: [
+                        "contratar uma consultoria externa para escolher a ferramenta de integração.",
+                        "identificar a ferramenta mais popular no mercado e adquiri-la imediatamente.",
+                        "selecionar uma ferramenta em que haja a possibilidade de se desenvolver internamente.",
+                        "comprar a ferramenta de integração que o departamento de TI da empresa utiliza nas demais áreas.",
+                        "analisar as necessidades e requisitos da empresa e selecionar a ferramenta de integração mais adequada."
+                    ],
+                    answer: "analisar as necessidades e requisitos da empresa e selecionar a ferramenta de integração mais adequada."
+                },
+                {
+                    question: "Uma empresa desenvolvedora de soluções IoT está criando um novo projeto de integração IoT para monitoramento de estoques em tempo real. É necessário identificar os recursos e a linguagem de programação adequados, levando em consideração a conectividade de hardware e software. A tecnologia usada para a integração IoT do novo projeto é",
+                    image: null,
+                    options: ["CSS.", "HTML.", "Python.", "Portugol.", "Assembler."],
+                    answer: "Python."
+                },
+                {
+                    question: "Um programador recentemente contratado está implantando um novo sistema que utiliza uma base de dados existente na empresa. Ele verificou que alguns dados estão inconsistentes e com duplicidade, portanto precisa aplicar técnicas de manipulação de banco de dados para a implantação do novo sistema com o atual banco de dados. Visando a implantação do novo sistema e utilizando o atual ambiente de banco de dados, qual técnica é mais indicada dada a situação encontrada pelo programador?",
+                    image: null,
+                    options: ["Backup dos dados.", "Criptografia dos dados.", "Análise de desempenho.", "Normalização do banco de dados.", "Atualização do sistema operacional."],
+                    answer: "Normalização do banco de dados."
+                },
+                {
+                    question: "Durante as aulas sobre fundamentos de eletroeletrônica aplicada no desenvolvimento de sistemas, um aluno criou um projeto que contém uma rede de objetos físicos interconectados que são equipados com sensores, software e outras tecnologias avançadas integradas. Esses dispositivos são capazes de coletar e transmitir dados para outros dispositivos e sistemas por meio da internet, sem a necessidade de intervenção humana direta. O projeto criado pelo aluno engloba recursos de",
+                    image: null,
+                    options: ["rede 5G.", "rede neural.", "hiperconvergência.", "cloud computing (computação em nuvem).", "IoT (Internet of Things, em português, Internet das Coisas)."],
+                    answer: "IoT (Internet of Things, em português, Internet das Coisas)."
+                },
+                {
+                    question: "Uma equipe de desenvolvedores de software estava criando um sistema de gerenciamento de estoque para uma grande loja de departamentos. A equipe enfrentou dificuldades em relação aos requisitos funcionais do sistema, pois estava recebendo feedbacks vagos e contraditórios dos clientes. [...] A equipe enfrentou dificuldades porque o requisito funcional do sistema deve",
+                    image: null,
+                    options: ["responder às requisições em menos de 1 segundo.", "estar disponível 24 horas por dia, com disponibilidade de 99.9% do tempo.", "estar pronto para a integração de outros módulos de forma fácil, simples e funcional.", "enviar um alerta para o setor de compras quando o estoque de um produto estiver abaixo de uma quantidade configurável.", "operar os seus serviços na nuvem, de forma que também possa operar de forma offline em caso de falha de conexão, sincronizando os dados assim que a conexão for reestabelecida."],
+                    answer: "enviar um alerta para o setor de compras quando o estoque de um produto estiver abaixo de uma quantidade configurável."
+                },
+                {
+                    question: "Estrutura de dados do tipo pilha tem por característica efetuar as operações de inserção e remoção de elementos sempre em uma extremidade da estrutura chamada topo. Dada a sequência de operações: 1. push(3), 2. push(9), 3. pop(), 4. push(5), 5. push(8), 6. pop(), 7. pop(), 8. push(1), 9. pop(). Ao efetuar essa sequência em uma pilha vazia, qual o elemento que estará no topo ao final?",
+                    image: null,
+                    options: ["1", "3", "5", "8", "9"],
+                    answer: "1"
+                },
+                {
+                    question: "Um técnico em desenvolvimento de sistemas criou um teste de mesa para validar as saídas da variável \"n\" utilizando o algoritmo e a tabela abaixo. Ao depurar esse código, qual é a sequência esperada pelo desenvolvedor para a variável \"n\"?",
+                    image: "questao6",
+                    options: ["0, 1, 2, 3, 4, 5", "0, 1, 1, 2, 3, 5", "0, 0, 0, 1, 1, 2", "0, 1, 1, 1, 2, 3", "1, 2, 3, 4, 5, 6"],
+                    answer: "0, 0, 0, 1, 1, 2"
+                },
+                {
+                    question: "Um técnico é desenvolvedor de um sistema de gestão de clientes para uma grande empresa. Foi solicitado a ele a criação de uma consulta SQL que retorne todos os clientes com idade maior ou igual a 18 anos e que morem na cidade de São Paulo. O comando que deve ser utilizado é:",
+                    image: null,
+                    options: ["SELECT * FROM clientes WHERE idade > 18 AND cidade = 'São Paulo';", "SELECT * FROM clientes WHERE idade >= 18 OR cidade = 'São Paulo';", "SELECT * FROM clientes WHERE idade >= 18 AND cidade = 'São Paulo';", "SELECT * FROM clientes WHERE idade > 18 OR cidade LIKE '%São Paulo%';", "SELECT * FROM clientes WHERE idade >= 18 AND cidade LIKE '%São Paulo%';"],
+                    answer: "SELECT * FROM clientes WHERE idade >= 18 AND cidade = 'São Paulo';"
+                },
+                {
+                    question: "Para validar parte por parte do sistema que está sendo codificado, um técnico em desenvolvimento de sistemas planejou realizar um teste que ele mesmo executaria e também ficaria responsável por corrigir as falhas. Qual é o teste de software capaz de atender o proposto?",
+                    image: null,
+                    options: ["Carga.", "Unitário.", "Requisito.", "Regressão.", "Usabilidade."],
+                    answer: "Unitário."
+                },
+                {
+                    question: "Um aluno do curso superior de Análise e Desenvolvimento de Sistemas precisa redigir uma monografia baseada na norma ABNT, que deverá conter a documentação do protótipo. Qual software para escritório o aluno deve utilizar?",
+                    image: null,
+                    options: ["Outlook", "Editor de vídeo", "Editor de textos", "Planilha eletrônica", "Apresentações digitais"],
+                    answer: "Editor de textos"
+                },
+                {
+                    question: "Uma equipe de desenvolvimento concluiu uma versão preliminar de software e, após feedback dos usuários, o líder orientou que apliquem a técnica de refatoração. A técnica recomendada permite que o código produzido pela equipe:",
+                    image: null,
+                    options: ["seja testado para garantir que ele não contenha erros.", "seja reescrito usando um conjunto específico de regras.", "seja convertido de uma linguagem de programação para outra.", "combina diferentes partes do código do programa em uma única seção.", "tenha sua estrutura interna melhorada sem alterar sua funcionalidade externa."],
+                    answer: "tenha sua estrutura interna melhorada sem alterar sua funcionalidade externa."
+                },
+                {
+                    question: "Um programador está trabalhando na implantação de um sistema web e precisa documentar todo o processo. Para isso, ele precisa utilizar aplicações e sistemas operacionais que facilitem esse processo. O programador deve utilizar aplicações e sistemas operacionais com a finalidade de",
+                    image: null,
+                    options: ["facilitar a organização e os documentos do processo de desenvolvimento do sistema web.", "facilitar a implementação de novas funcionalidades no sistema.", "reduzir o tempo de desenvolvimento do sistema web.", "estimular o desempenho do sistema web.", "garantir a segurança do sistema web."],
+                    answer: "facilitar a organização e os documentos do processo de desenvolvimento do sistema web."
+                },
+                {
+                    question: "Uma empresa está desenvolvendo uma solução de automação residencial que utiliza dispositivos IoT para monitorar e controlar vários aspectos da casa, como iluminação, temperatura e segurança. Para garantir a interoperabilidade dos dispositivos e a eficiência da comunicação entre eles, é importante selecionar os recursos e a linguagem de programação adequados. Com base na solução a ser desenvolvida, o recurso adequado a ser utilizado é",
+                    image: null,
+                    options: ["disponibilidade de recursos de rede.", "interface de usuário dos dispositivos.", "popularidade da linguagem de programação.", "capacidade de processamento dos dispositivos.", "compatibilidade de protocolos e formatos de dados."],
+                    answer: "compatibilidade de protocolos e formatos de dados."
+                },
+                {
+                    question: "Um gerente de projetos em uma empresa de desenvolvimento de software está trabalhando com a implantação de um sistema de gestão de recursos humanos para uma organização de grande porte. O cronograma de implantação do sistema inclui várias etapas, como análise de requisitos, desenvolvimento, testes e treinamento de usuários. Durante o processo de implantação, é necessário criar uma regra de negócio específica relacionada ao cálculo de bônus dos funcionários, que deve ser considerada no cronograma de implantação do sistema. A referida regra deve ser",
+                    image: null,
+                    options: ["realizada no início do projeto e integrada ao cronograma, permitindo ajustes durante as etapas do projeto, se necessário.", "delegada à equipe de desenvolvimento para tratamento independente do cronograma de implantação.", "tratada ao longo do processo de implantação, quando for possível calcular o bônus do funcionário.", "tratada como uma etapa independente no cronograma de implantação.", "realizada apenas após a conclusão do cronograma de implantação."],
+                    answer: "realizada no início do projeto e integrada ao cronograma, permitindo ajustes durante as etapas do projeto, se necessário."
+                },
+                {
+                    question: "Um programador está desenvolvendo um sistema para sua empresa que envolve a coleta de dados de sensores em um ambiente industrial. Para tal, ele precisa entender os fundamentos de eletrônica aplicada para desenvolver o sistema com tecnologia IoT utilizando um componente para amplificar um sinal analógico em circuito eletrônico. Qual componente eletrônico deve ser utilizado?",
+                    image: null,
+                    options: ["Transistor", "Capacitor", "Resistor", "Diodo", "Led"],
+                    answer: "Transistor"
+                },
+                {
+                    question: "Um analista de sistemas precisa estruturar um sistema de vendas online, avaliando os requisitos e as regras de negócios. No processo de elaboração desse sistema, o analista deve decidir se o requisito: \"O sistema deve permitir aos usuários salvar itens em uma lista de desejos para compra posterior\" será adicionado ou não na modelagem do sistema. Na emissão do documento de levantamento de requisitos, esse analista de sistemas deve",
+                    image: null,
+                    options: ["excluir o requisito da modelagem do sistema, pois é uma funcionalidade acessória e pode complicar a interface do usuário.", "incluir o requisito na modelagem do sistema, pois é uma funcionalidade importante para os usuários e pode aumentar as vendas.", "adiar a decisão sobre o requisito até que seja feito mais pesquisas sobre o comportamento dos usuários e as tendências do mercado.", "modificar o requisito para permitir que os usuários compartilhem suas listas de desejos com amigos, para aumentar o engajamento deles.", "incluir o requisito na modelagem do sistema, mas limitar a quantidade de itens que os usuários podem adicionar à lista de desejos para evitar sobrecarregar o sistema."],
+                    answer: "incluir o requisito na modelagem do sistema, pois é uma funcionalidade importante para os usuários e pode aumentar as vendas."
+                },
+                {
+                    question: "Um técnico em Desenvolvimento de Sistemas estava analisando um sistema para verificar se a codificação estava condizente com a especificação da documentação e constatou uma inconsistência entre o diagrama de classes na classe \"conta\" e a codificação. De acordo com as informações, qual foi a inconsistência encontrada?",
+                    image: "questao16",
+                    options: ["Os atributos do diagrama de classes deveriam estar com a visibilidade private.", "Os atributos no diagrama de classes deveriam estar com a visibilidade public.", "Os atributos do programa deveriam estar com a visibilidade protected.", "Os métodos deveriam estar com a visibilidade protected.", "Os métodos deveriam estar com a visibilidade private."],
+                    answer: "Os atributos do diagrama de classes deveriam estar com a visibilidade private."
+                },
+                {
+                    question: "Uma equipe está usando o conceito de orientação a objeto para desenvolver um software. Eles precisam definir que a visibilidade de um atributo da classe PESSOA seja acessado apenas por métodos dessa classe ou qualquer método definido em subclasses de PESSOA. Com base nessas informações, qual visibilidade foi usada por essa equipe?",
+                    image: null,
+                    options: ["Pública (public)", "Estática (static)", "Privada (private)", "Pacote (package)", "Protegida (protected)"],
+                    answer: "Protegida (protected)"
+                },
+                {
+                    question: "Suponha que uma empresa de desenvolvimento de sistemas esteja desenvolvendo uma query referente a um módulo de um sistema de vendas. Um técnico que está participando desse projeto deve implementar uma query para representar a saída dos dados e endereços dos clientes de São Paulo com base na imagem a seguir. Qual query deve ser implementada pelo técnico?",
+                    image: "questao20",
+                    options: [
+                        "SELECT tblenderecos.*, tblestados.sigla, tblcidades.nome FROM tblclientes INNER JOIN tblenderecos ON tblclientes.idCliente = tblenderecos.idCliente INNER JOIN tblcidades ON tblenderecos.idCidade = tblcidades.idCidade INNER JOIN tblestados ON tblcidades.idEstado = tblestados.idEstado WHERE tblestados.sigla = 'SP';",
+                        "SELECT tblclientes.*, tblenderecos.*, tblestados.sigla, tblcidades.nome FROM tblclientes INNER JOIN tblenderecos ON tblclientes.idCliente = tblenderecos.idCliente INNER JOIN tblcidades ON tblenderecos.idCidade = tblcidades.idCidade INNER JOIN tblestados ON tblcidades.idEstado = tblestados.idEstado WHERE tblenderecos.idCidade = tblcidades.idCidade;",
+                        "SELECT tblclientes.*, tblenderecos.*, tblestados.sigla, tblcidades.nome FROM tblclientes INNER JOIN tblenderecos ON tblclientes.idCliente = tblenderecos.idCliente INNER JOIN tblcidades ON tblenderecos.idCidade = tblcidades.idCidade INNER JOIN tblestados ON tblcidades.idEstado = tblestados.idEstado WHERE tblestados.sigla = 'rj';",
+                        "SELECT tblenderecos.*, tblestados.sigla, tblcidades.nome FROM tblclientes INNER JOIN tblenderecos ON tblclientes.idCliente = tblenderecos.idCliente INNER JOIN tblcidades ON tblenderecos.idCidade = tblcidades.idCidade INNER JOIN tblestados ON tblcidades.idEstado = tblestados.idEstado WHERE tblestados.sigla = 'sp';",
+                        "SELECT tblclientes.*, tblenderecos.*, tblestados.sigla, tblcidades.nome FROM tblclientes INNER JOIN tblenderecos ON tblclientes.idCliente = tblenderecos.idCliente INNER JOIN tblcidades ON tblenderecos.idCidade = tblcidades.idCidade INNER JOIN tblestados ON tblcidades.idEstado = tblestados.idEstado WHERE tblestados.sigla = 'SP';"
+                    ],
+                    answer: "SELECT tblclientes.*, tblenderecos.*, tblestados.sigla, tblcidades.nome FROM tblclientes INNER JOIN tblenderecos ON tblclientes.idCliente = tblenderecos.idCliente INNER JOIN tblcidades ON tblenderecos.idCidade = tblcidades.idCidade INNER JOIN tblestados ON tblcidades.idEstado = tblestados.idEstado WHERE tblestados.sigla = 'SP';"
+                },
+                {
+                    question: "A equipe de desenvolvimento de um sistema web foi contratada para implantar uma nova versão em um cliente. Durante a implantação, a equipe precisa identificar possíveis problemas e realizar ajustes no sistema para que ele possa funcionar corretamente. Para garantir a estabilidade do sistema durante a implantação, qual serviço a equipe de desenvolvimento deve realizar?",
+                    image: null,
+                    options: ["Teste de carga.", "Teste de unidade.", "Teste de sistema.", "Teste de aceitação.", "Teste de regressão."],
+                    answer: "Teste de aceitação."
+                },
+                {
+                    question: "Um desenvolvedor de software está em uma empresa criadora de um novo sistema de gerenciamento de tarefas para melhorar a produtividade dos funcionários. O sistema deve ser facilmente integrado a outros sistemas internos da empresa e de simples implantação. Além disso, ele deve permitir a adição de novas funcionalidades no futuro. Para garantir a integração entre os sistemas, o protocolo de comunicação utilizado pelo desenvolvedor deve ser o",
+                    image: null,
+                    options: ["FTP.", "SSH.", "SOAP.", "REST.", "MQTT."],
+                    answer: "REST."
+                },
+                {
+                    question: "Uma escola conseguiu otimizar seus processos de gestão e administração por meio da integração de seus sistemas de gestão escolar e financeiro, que anteriormente eram independentes e não se comunicavam. A integração foi criada por meio de uma API que permitiu a troca de informações entre os sistemas, eliminando a necessidade de inserção manual de dados em ambos os sistemas. Ao criar a integração dos sistemas, o benefício que a escola teve foi",
+                    image: null,
+                    options: ["redução da escalabilidade do sistema.", "redução da complexidade do sistema.", "aumento do tempo em que os usuários utilizam o sistema.", "diminuição da segurança e consistência dos dados do sistema.", "aumento da dificuldade de treinamento dos usuários para a utilização do sistema."],
+                    answer: "redução da complexidade do sistema."
+                },
+                {
+                    question: "Uma indústria de laticínios deseja realizar uma migração de sistemas. Para isso, contratou uma empresa de desenvolvimento de software, a qual está se orientando pelos requisitos e pelas regras de negócios para desenvolver a documentação e os diagramas de implantação de sistemas. Qual é o objetivo de elaborar a documentação utilizando os requisitos e as regras de negócios?",
+                    image: null,
+                    options: ["Documentar as funcionalidades do sistema.", "Identificar as metas e os objetivos do projeto.", "Analisar o desempenho do sistema após a implantação.", "Definir as especificações técnicas do hardware utilizado.", "Garantir que o sistema atenda às necessidades do negócio."],
+                    answer: "Garantir que o sistema atenda às necessidades do negócio."
+                },
+                {
+                    question: "Nas aulas de desenvolvimento de sistemas, um programador ensinou que a estrutura de controle de fluxo \"if-else\" permite ao programa executar diferentes trechos de código dependendo do valor lógico de uma expressão. Considere o seguinte trecho de código. Quando o usuário digitar o número 5, a saída esperada é",
+                    image: "questao26",
+                    options: ["o programa entrar em loop infinito.", "o programa não apresentar retorno.", "o número ser ímpar.", "o número ser par.", "o número ser zero."],
+                    answer: "o número ser ímpar."
+                },
+                {
+                    question: "Uma empresa precisa configurar um servidor de banco de dados SQL em um ambiente de produção. O administrador de banco de dados é responsável por realizar essa tarefa com base nas melhores práticas de segurança e desempenho. Nesse caso, o administrador deverá",
+                    image: null,
+                    options: ["desabilitar o log de consultas para melhorar o desempenho do servidor.", "autorizar a execução de consultas complexas no servidor, sem limites de tempo.", "configurar backups regulares do banco de dados para garantir a disponibilidade dos dados.", "permitir que todos os usuários possam se conectar diretamente ao servidor sem autenticação.", "consentir que as senhas dos usuários do banco de dados sejam armazenadas em texto puro no servidor."],
+                    answer: "configurar backups regulares do banco de dados para garantir a disponibilidade dos dados."
+                },
+                {
+                    question: "Um técnico foi contratado para participar do desenvolvimento de um aplicativo web para um e-commerce de produtos de informática. Uma boa prática que aprendeu nas aulas do curso de desenvolvimento de sistemas é que devemos testar o software. O primeiro teste com custo mais baixo e próximo ao código-fonte é o",
+                    image: null,
+                    options: ["teste funcional.", "teste de unidade.", "teste de aceitação.", "teste de integração.", "teste de ponta a ponta."],
+                    answer: "teste de unidade."
+                },
+                {
+                    question: "Um desenvolvedor web está trabalhando em um projeto de criação de um sistema para gerenciamento de estoque em uma loja. Para a criação do banco de dados, foi solicitado utilizar técnicas de modelagem e linguagem na manipulação de bancos de dados normalizados. O desenvolvedor utilizou as técnicas para",
+                    image: null,
+                    options: ["aumentar a redundância dos dados.", "facilitar a inserção de dados duplicados.", "acelerar o tempo de resposta das consultas.", "garantir a integridade e eficiência dos dados.", "reduzir a complexidade do modelo de dados."],
+                    answer: "garantir a integridade e eficiência dos dados."
+                },
+                {
+                    question: "Na implementação de um sistema automatizado de controle de temperatura de uma casa, é necessário a inscrição do cliente no broker para verificação da temperatura. Nele, foram criados os tópicos principais: “casa”, “garagem” e “oficina”; e os sub-tópicos: “temperatura” e “umidade” em cada um dos tópicos principais. Para atingir o resultado, o desenvolvedor deve programar a sintaxe",
+                    image: null,
+                    options: ["casa/+/temperatura", "+casa/#/temperatura", "casa/#/temperatura", "#casa/temperatura/+", "+casa/temperatura/#"],
+                    answer: "casa/+/temperatura"
+                },
+                {
+                    question: "Uma empresa de software possui um programa que reproduz uma determinada função matemática. Um técnico foi contratado para analisar o código desenvolvido pelo programador e identificar qual o resultado será produzido pelo programa após a sua execução. O código do programa está descrito na figura a seguir. A partir da análise do código, o técnico informou que após a execução será impresso o número",
+                    image: "questao31",
+                    options: ["1.", "6.", "30.", "120.", "720."],
+                    answer: "720."
+                },
+                {
+                    question: "Um programador está desenvolvendo um sistema para uma loja virtual e precisa criar um algoritmo que calcule o valor total de um carrinho de compras, levando em consideração a quantidade de produtos, seus respectivos preços e utilizando a lógica de programação e para resolver esse problema computacional. O programador deverá utilizar que lógica?",
+                    image: null,
+                    options: [
+                        "para cada (produto em carrinho) { total = total + (produto.preco * produto.quantidade); }",
+                        "para cada (produto em carrinho) { total = total * (produto.preco * produto.quantidade); }",
+                        "para cada (produto em carrinho) { total = total + (produto.preco + produto.quantidade); }",
+                        "para cada (produto em carrinho) { total = total - (produto.preco + produto.quantidade); }",
+                        "para cada (produto em carrinho) { total = total / (produto.preco * produto.quantidade); }"
+                    ],
+                    answer: "para cada (produto em carrinho) { total = total + (produto.preco * produto.quantidade); }"
+                },
+                {
+                    question: "Uma cooperativa pesqueira precisa implementar um sistema para controlar o rendimento diário de seus cooperados. Sempre que o sistema identificar que o peso dos peixes excedeu o limite de peso estabelecido pelo regulamento de pesca (50 quilos), o cooperado deve pagar uma multa de R$ 4,00 por quilo excedente. O algoritmo abaixo deve ler o peso dos peixes e verificar se há excesso, exibindo, então, o excesso e o valor da multa a ser paga. De acordo com as informações, qual teste lógico deve ser realizado na linha 11?",
+                    image: "questao36",
+                    options: [
+                        "Se (peso>=50) então",
+                        "Se (peso>excesso) então",
+                        "Se (pesopermitido>50) então",
+                        "Se (pesopermitido<peso) então",
+                        "Se (peso>pesopermitido) então"
+                    ],
+                    answer: "Se (peso>pesopermitido) então"
+                },
+                {
+                    question: "Um desenvolvedor está realizando o estudo da codificação abaixo. A função \"calcular\" implementa um exemplo do conceito de",
+                    image: "questao37",
+                    options: ["herança.", "composição.", "recursividade.", "polimorfismo.", "encapsulamento."],
+                    answer: "polimorfismo."
+                },
+                {
+                    question: "Uma locadora de veículos adquiriu um software muito conhecido para controle da frota de veículos, porém, após a implantação do sistema, os usuários verificaram que o sistema necessita de uma funcionalidade nova de agendamento não prevista anteriormente. Sabe-se que a engenharia de software tem três tipos de manutenções: manutenção para reparos de defeitos de software; manutenção para adaptar o software para um ambiente operacional diferente; e manutenção para adicionar funcionalidade ao sistema. Para resolver esse problema, o desenvolvedor de software deve realizar a",
+                    image: null,
+                    options: [
+                        "manutenção para reduzir ou impedir falhas no sistema.",
+                        "verificação dos requisitos do sistema quando mudam em resposta às necessidades da organização.",
+                        "manutenção preventiva que tem como objetivo principal de antecipar e encontrar problemas do sistema.",
+                        "manutenção aplicada quando o hardware, plataforma do sistema operacional ou outro software de apoio mudam e, assim, o software necessita de ajustes.",
+                        "correção de erros de codificação que é normalmente barato, mas os erros de projeto são caros, pois podem envolver a reescrita de componentes do sistema."
+                    ],
+                    answer: "manutenção para reduzir ou impedir falhas no sistema."
+                },
+                {
+                    question: "Diagrama Entidade Relacionamento (ER) é um tipo especial de fluxograma que representa a forma como as entidades se comportam dentro de um sistema. Esses diagramas usam um conjunto de símbolos, que expressam a situação a ser modelada e o fluxo de informações dentro de um sistema. Esses símbolos são retângulos, losangos, elipses e linhas de conexão. A imagem a seguir é um exemplo de um diagrama ER. Nesse diagrama, uma entidade é representada por",
+                    image: "questao39",
+                    options: ["uma elipse.", "um losango.", "um retângulo.", "um conjunto de elipses.", "um verbo escrito na linha."],
+                    answer: "um retângulo."
+                },
+                {
+                    question: "Uma empresa do eixo tecnológico está desenvolvendo um sistema e a equipe irá aplicar o teste no ambiente do cliente. Sua participação direta tem como objetivo validar a eficácia do sistema e fazer simulações com ações reais dos usuários finais. Sabe-se que o teste que será aplicado é um tipo de teste de caixa preta. De acorco com as informações, o teste aplicado é",
+                    image: null,
+                    options: ["o teste estático.", "o teste de sistema.", "o teste de aceitação.", "o teste de usabilidade.", "o teste de desempenho."],
+                    answer: "o teste de sistema."
+                }
+            ];
+
+        // Transform compact imported quiz into the internal fullQuizData format and append
+        (function appendImportedQuiz() {
+            if (!importedQuizCompact || importedQuizCompact.length === 0) return;
+            const startIndex = fullQuizData.length;
+            importedQuizCompact.forEach((qCompact, idx) => {
+                const opts = qCompact.options.map(opt => ({ text: opt, isCorrect: opt === qCompact.answer }));
+                const qObj = {
+                    questionNumber: fullQuizData.length + 1,
+                    question: qCompact.question,
+                    answerOptions: opts,
+                    rationale: qCompact.rationale || '',
+                    code: qCompact.code || null,
+                    image: qCompact.image || null
+                };
+                fullQuizData.push(qObj);
+            });
+            // store the indices for potential import into Firestore later
+            window.__importedQuizIndices = Array.from({ length: importedQuizCompact.length }, (_, i) => startIndex + i);
+        })();
+
+        // --- Import into Firestore if not already present
+        async function importCompactQuizIfMissing() {
+            if (!dbSimuladosCollection) return;
+            const importedName = `Importado com Imagens - ${new Date().toISOString().slice(0,10)}`;
+            try {
+                // check existing quizzes for same name
+                const snap = await getDocs(query(dbSimuladosCollection, orderBy('createdAt', 'desc')));
+                let exists = false;
+                snap.forEach(d => {
+                    const data = d.data();
+                    if (data && data.name === importedName) exists = true;
+                });
+                if (exists) return;
+                // create the new quiz doc using the imported indices
+                const selectedIndices = window.__importedQuizIndices || [];
+                if (selectedIndices.length === 0) return;
+                const newQuiz = {
+                    name: importedName,
+                    questionCount: selectedIndices.length,
+                    questionIndices: selectedIndices,
+                    createdAt: new Date()
+                };
+                await addDoc(dbSimuladosCollection, newQuiz);
+                console.log('Imported quiz added to Firestore:', importedName);
+            } catch (err) {
+                console.error('Error importing compact quiz:', err);
+            }
+        }
+
         const startScreen = document.getElementById('start-screen');
         const quizScreen = document.getElementById('quiz-screen');
         const resultsScreen = document.getElementById('results-screen');
@@ -1256,6 +1627,7 @@
         const reviewQuestionsContainer = document.getElementById('review-questions-container');
         const currentQuizInfo = document.getElementById('current-quiz-info');
         const quizFilterSelect = document.getElementById('quiz-filter');
+    const adminSortSelect = document.getElementById('admin-sort');
 
 
         let currentQuestionIndex = 0;
@@ -1344,6 +1716,8 @@
              adminDashboardScreen.classList.add('hidden');
              showAdminHistory(true);
         });
+
+       adminSortSelect.addEventListener('change', () => showAdminHistory(true));
 
         showCreateQuizViewBtn.addEventListener('click', () => {
             adminDashboardScreen.classList.add('hidden');
@@ -1493,6 +1867,21 @@
                 codeSnippetEl.textContent = question.code;
             } else {
                 codeSnippetContainer.classList.add('hidden');
+            }
+
+            // handle image if present
+            const imageContainer = document.getElementById('image-container');
+            const questionImage = document.getElementById('question-image');
+            if (question.image) {
+                const key = question.image;
+                const src = imageUrls && imageUrls[key] ? imageUrls[key] : question.image;
+                questionImage.src = src;
+                questionImage.alt = `Imagem da questão ${question.questionNumber || (currentQuestionIndex+1)}`;
+                imageContainer.classList.remove('hidden');
+            } else {
+                questionImage.src = '';
+                questionImage.alt = '';
+                imageContainer.classList.add('hidden');
             }
 
             question.answerOptions.forEach((option, index) => {
@@ -1673,6 +2062,21 @@
 
             await populateQuizFilter();
             const selectedQuiz = quizFilterSelect.value;
+            const sortOption = adminSortSelect ? adminSortSelect.value : 'timestamp_desc';
+
+            // determine field and direction for ordering
+            let orderField = 'timestamp';
+            let orderDir = 'desc';
+            if (sortOption === 'percentage_desc') {
+                orderField = 'percentage';
+                orderDir = 'desc';
+            } else if (sortOption === 'percentage_asc') {
+                orderField = 'percentage';
+                orderDir = 'asc';
+            } else {
+                orderField = 'timestamp';
+                orderDir = 'desc';
+            }
 
             try {
                  if (!dbResultsCollection) {
@@ -1682,16 +2086,44 @@
 
                 let q;
                 if (selectedQuiz === "all") {
-                    q = query(dbResultsCollection, orderBy("timestamp", "desc"));
+                    q = query(dbResultsCollection, orderBy(orderField, orderDir));
                 } else {
-                    q = query(dbResultsCollection, where("quizName", "==", selectedQuiz), orderBy("timestamp", "desc"));
+                    q = query(dbResultsCollection, where("quizName", "==", selectedQuiz), orderBy(orderField, orderDir));
                 }
 
-                const querySnapshot = await getDocs(q);
-                const results = [];
-                querySnapshot.forEach((doc) => {
-                    results.push(doc.data());
-                });
+                // Try ordered query first; if it fails (missing index / permission), fall back to client-side fetch+sort
+                let results = [];
+                try {
+                    const querySnapshot = await getDocs(q);
+                    querySnapshot.forEach((doc) => {
+                        results.push(doc.data());
+                    });
+                } catch (orderedQueryError) {
+                    console.warn('Ordered query failed, falling back to un-ordered fetch and client-side sort:', orderedQueryError);
+                    // Fetch all results without ordering and filter locally
+                    const fallbackSnapshot = await getDocs(dbResultsCollection);
+                    fallbackSnapshot.forEach((doc) => {
+                        const d = doc.data();
+                        if (selectedQuiz === 'all' || d.quizName === selectedQuiz) {
+                            results.push(d);
+                        }
+                    });
+
+                    // client-side sort
+                    if (orderField === 'percentage') {
+                        results.sort((a, b) => {
+                            const pa = typeof a.percentage === 'number' ? a.percentage : Number(a.percentage) || 0;
+                            const pb = typeof b.percentage === 'number' ? b.percentage : Number(b.percentage) || 0;
+                            return orderDir === 'desc' ? pb - pa : pa - pb;
+                        });
+                    } else {
+                        results.sort((a, b) => {
+                            const ta = a.timestamp && a.timestamp.toDate ? a.timestamp.toDate().getTime() : new Date(a.timestamp).getTime();
+                            const tb = b.timestamp && b.timestamp.toDate ? b.timestamp.toDate().getTime() : new Date(b.timestamp).getTime();
+                            return orderDir === 'desc' ? tb - ta : ta - tb;
+                        });
+                    }
+                }
 
                 adminHistoryTableBody.innerHTML = ''; 
 
